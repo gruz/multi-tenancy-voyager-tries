@@ -229,14 +229,53 @@ class Tenant
 }
 
 EOF
+
+cat << 'EOF' > app/Providers/AppServiceProvider.php
+<?php
+
+namespace App\Providers;
+
+use Hyn\Tenancy\Environment;
+use Illuminate\Support\ServiceProvider;
+
+class AppServiceProvider extends ServiceProvider
+{
+    /**
+     * Bootstrap any application services.
+     *
+     * @return void
+     */
+    public function boot()
+    {
+        $env = app(Environment::class);
+
+        if ($fqdn = optional($env->hostname())->fqdn) {
+            config(['database.default' => 'tenant']);
+        }
+        //
+    }
+
+    /**
+     * Register any application services.
+     *
+     * @return void
+     */
+    public function register()
+    {
+        //
+    }
+}
+EOF
+
+
 php artisan config:clear
 
 ## Move away tenant migrations to avoid creating system tenant tables in the tenant database
 mkdir tmpmgr
 mv database/migrations/*.php tmpmgr
 
-# php artisan tenant:delete boise.wyzoo.test
 ## Create a user and run voyager:install inside the process
+# php artisan tenant:delete boise.wyzoo.test
 php artisan tenant:create boise.wyzoo.test 123456 boise@example.com
 
 ## Move back system tenant migrations
