@@ -291,6 +291,18 @@ done
 ## Wrap Voyager routes in tenant.enforce middleware
 sed -i "s/Route::group(\['prefix' => 'admin'\], function () {/Route::group(\['prefix' => 'admin', 'middleware' => 'tenancy.enforce' \], function () {/g" routes/web.php
 
+POLICIES="\
+        'TCG\\\Voyager\\\Models\\\Setting' => 'TCG\\\Voyager\\\Policies\\\SettingPolicy',\n\
+        'TCG\\\Voyager\\\Models\\\MenuItem' => 'TCG\\\Voyager\\\Policies\\\MenuItemPolicy',\n\
+        'TCG\\\Voyager\\\Models\\\User' => 'TCG\\\Voyager\\\Policies\\\UserPolicy',\n\
+        'TCG\\\Voyager\\\Models\\\Menu' => 'TCG\\\Voyager\\\Policies\\\BasePolicy',\n\
+        'TCG\\\Voyager\\\Models\\\Role' => 'TCG\\\Voyager\\\Policies\\\BasePolicy',\n\
+        'TCG\\\Voyager\\\Models\\\Category' => 'TCG\\\Voyager\\\Policies\\\BasePolicy',\n\
+        'TCG\\\Voyager\\\Models\\\Post' => 'TCG\\\Voyager\\\Policies\\\BasePolicy',\n\
+        'TCG\\\Voyager\\\Models\\\Page' => 'TCG\\\Voyager\\\Policies\\\BasePolicy',";
+sed -i "s/\('App\\\Model' => 'App\\\Policies\\\ModelPolicy',\)/\1\n$POLICIES/g" app/Providers/AuthServiceProvider.php
+
+
 # php artisan vendor:publish --provider=VoyagerServiceProvider
 # php artisan vendor:publish --provider=ImageServiceProviderLaravel5
 # php artisan voyager:install
