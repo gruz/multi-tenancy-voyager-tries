@@ -62,8 +62,30 @@ class Tenant
         // make hostname current
         app(Environment::class)->tenant($hostname->website);
 
+        // We rename temporary tenant migrations to avoid creating system tenant tables in the tenant database
+        $migrations = getcwd() . '/database/migrations/';
+        $files_to_preserve = glob($migrations . '*.php');
+
+        foreach ($files_to_preserve as $file) {
+            rename($file, $file . '.txt');
+        }
+
         // \Artisan::call('voyager:install');
         \Artisan::call('voyager:install', ['--with-dummy' => true ]);
+
+        foreach ($files_to_preserve as $file) {
+            rename($file.'.txt', $file);
+        }
+
+        // Cleanup Voyager dummy migrations from system migration folder
+        $voyager_migrations = getcwd() . '/vendor/tcg/voyager/publishable/database/migrations/*.php';
+        $files_to_kill = glob($voyager_migrations);
+        $files_to_kill = array_map('basename', $files_to_kill);
+
+        foreach ($files_to_kill as $file) {
+            $path = $migrations. '/'. $file;
+            unlink($path);
+        }
 
         // Make the registered user the default Admin of the site.
         $admin = static::makeAdmin($name, $email, $password);
@@ -82,7 +104,7 @@ class Tenant
 
     public static function tenantExists($name)
     {
-        $name = $name . '.' . env('APP_URL_BASE');
+        // $name = $name . '.' . env('APP_URL_BASE');
         return Hostname::where('fqdn', $name)->exists();
     }
 }

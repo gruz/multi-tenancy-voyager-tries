@@ -18,6 +18,7 @@ class AppServiceProvider extends ServiceProvider
 
         if ($fqdn = optional($env->hostname())->fqdn) {
             config(['database.default' => 'tenant']);
+            config(['voyager.storage.disk' => 'tenant']);
         }
         //
     }

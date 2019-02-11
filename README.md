@@ -1,30 +1,139 @@
-```bash
-# 01 Environment setup
+# Laravel Multitenant + Voyager installation guide
 
-## Store project name to a variable to be easily changed
-PROJECT_NAME=multi-tenancy-voyager;
-## Create project folder and switch to it
+## Intro
+
+We will install docker environment, [laravel-tenancy.com](https://laravel-tenancy.com/) and [Voyager admin panel](https://laravelvoyager.com/) per-tenant.
+
+We will use CLI commands to create tenants (domains). After the tenant is created, you will be able to login into a Voyager admin per tenant.
+
+We will use Postgres database.
+
+> Please note:
+> 1. This tutorial is written as a Linux bash script with comments. So a linux user can copy/paste the bash script code into one's terminal.
+> 2. After docker initialization you will need to run at least some commands (like `composer update`, `php artisan ...`) inside the docker (linux) environment. This means you will become a linux user, thus see p.1
+
+## Prerequisites
+
+### Software needed
+
+* docker
+* docker-compose
+* git
+
+### System configuration
+
+Make sure you have all other dockers down and standard ports free to avoid conflicts.
+
+## Installation
+
+### Add domains for tenant tests to your hosts file
+
+#### Manual action
+
+Edit you hosts file to add test domains.
+
+* Linux/MacOS: Edit /etc/hosts
+* Windows: https://www.google.com/search?q=windows+hosts+file+path&ie=utf-8&oe=utf-8&client=firefox-b
+
+Add lines like the following ones to have local development domains.
+
+```bash
+127.0.0.1 voyager.test
+127.0.0.1 kyiv.voyager.test
+127.0.0.1 dnipro.voyager.test
+127.0.0.1 lviv.voyager.test
+```
+
+etc...
+
+#### Linux script way bash
+
+Open terminal window and run `sudo -i` to login as sudo user.
+
+Next paste the script into your terminal.
+
+```bash
+FILE=/etc/hosts;
+NEW_IP=127.0.0.1;
+HOSTS=("voyager.test" "kyiv.voyager.test" "dnipro.voyager.test" "lviv.voyager.test" "odesa.voyager.test" );
+
+for HOST in ${HOSTS[*]}
+do
+    printf "   %s\n" $HOST
+    sed -i.bak -e '$a\' -e "$NEW_IP\t$HOST" -e "/.*$HOST/d" $FILE
+done
+exit;
+
+```
+
+### Docker setup
+
+```bash
+## Create your project folder and install laradock (a docker for laravel)
+
+# Store project name to a variable to be easily changed
+PROJECT_NAME="multi-tenancy-voyager";
+
+# Create project folder and switch to it
 mkdir $PROJECT_NAME;
 cd $PROJECT_NAME;
-## Install laradock
+
+# Install laradock
 git init
 git submodule add https://github.com/Laradock/laradock.git
 cd laradock
 cp env-example .env
-## Run docker containers and login into the workspace container
+
+# Enable PHP exif used by Voyager Media manager
+sed -i "s/PHP_FPM_INSTALL_EXIF=false/PHP_FPM_INSTALL_EXIF=true/g" .env
+
+# Run docker containers and login into the workspace container
+    # > Building docker containers can take significant time for the first run.
+    # > We run adminer container to have a database management UI tool.
+        # Available under localhost:8080
+        # System: PostgreSQL
+        # Server: postgres
+        # Username: default
+        # Password: secret
 docker-compose up -d postgres nginx adminer
 docker-compose exec --user=laradock workspace bash
 
-## !!! Since this moment we work inside the container
+```
 
-## Create laravel project. We need an intermediate tmp folder as our current folder is not 
-## empty and laravel installation would fail otherwise
+You should see smth. like `laradock@5326c549f4cb:/var/www` in your terminal. That means you are logged in into the docker linux container. We will work next here.
+
+### In-docker workspace setup
+
+Whether you use linux or no, since this moment we work inside the docker container in a linux bash terminal.
+
+So you can just copy/paste the script below in your terminal.
+
+Otherwise read comments to get better understanding what is going on.
+
+```bash
+# 01 Create laravel project.
+# We need an intermediate tmp folder as our current folder is not
+# empty (contains laradoc folder) and laravel installation would fail otherwise
 composer create-project --prefer-dist laravel/laravel tmp
+# Enable hidden files move
 shopt -s dotglob
+# Move laravel project files from ./tmp to the project root
 mv ./tmp/* .
+# Remove the temporary folder.
 rm -rf ./tmp
 
 ## Update default mysql connection
+## Manual:
+# Edit you .env file DB connection
+
+# DB_CONNECTION=system
+# DB_HOST=postgres
+# DB_PORT=5432
+# DB_DATABASE=default
+# DB_USERNAME=default
+# DB_PASSWORD=secret
+
+## Script way
 sed -i "s/DB_CONNECTION=mysql/DB_CONNECTION=system/g" .env
 sed -i "s/DB_HOST=127\.0\.0\.1/DB_HOST=postgres/g" .env
 sed -i "s/DB_PORT=3306/DB_PORT=5432/g" .env
@@ -34,47 +143,60 @@ sed -i "s/DB_USERNAME=homestead/DB_USERNAME=default/g" .env
 
 # 02 Laravel-tenancy installation
 
-## Change connection name to system
+## Change connection name to from `pgsql` to `system` in `./config/database.php`
 sed -i "s/'pgsql' => \[/'system' => [/g" ./config/database.php
 
 ## Install package and configure the mulitenancy package
 composer require "hyn/multi-tenant:5.3.*"
 php artisan vendor:publish --tag=tenancy
 
+## Allow auto deleting tenant folders on tenant delete in `config/tenancy.php`. Optional.
+## You should read the file carefully and realize which options it has.
 sed -i "s/'auto-delete-tenant-directory' => false/'auto-delete-tenant-directory' => true/g" ./config/tenancy.php
 
+## Update your laravel .env file with the following options. Optional.
 echo '' >> .env
 echo '# Laravel-tenancy config' >> .env
 echo 'TENANCY_DATABASE_AUTO_DELETE=true' >> .env
 echo 'TENANCY_DATABASE_AUTO_DELETE_USER=true' >> .env
 
 
-## Move user handling migrations to tenant folder
+## Move user handling migrations to tenant folder to have per-tenant user tables 
+## and to avoid creating unneeded tables in your system database.
+
+# Make `database/migrations/tenant` folder
 mkdir database/migrations/tenant
+# Move `2014_10_12_000000_create_users_table.php` and 
+# `2014_10_12_100000_create_password_resets_table.php`
+# to the newly created folder.
 mv database/migrations/2014_10_12_000000_create_users_table.php database/migrations/tenant/
 mv database/migrations/2014_10_12_100000_create_password_resets_table.php database/migrations/tenant/
 
+# Run database migrations for the system DB only.
+# After that you'll find the tables in your `defualt` database:
+# `hostnames`, `migrations`, `websites`
 php artisan migrate --database=system
 
-## Create middleware
-php artisan make:middleware EnforceTenancy
+# 03 Adding CLI laravel commands to create tenants
 
-sed -i "s/return \$next(\$request);/\\\Illuminate\\\Support\\\Facades\\\Config::set('database.default', 'tenant');\n\n        return \$next(\$request);/g" app/Http/Middleware/EnforceTenancy.php
-
-sed -i "s/protected \$routeMiddleware = \[/protected \$routeMiddleware = \[\n        'tenancy.enforce' => \\\App\\\Http\\\Middleware\\\EnforceTenancy::class,/g" app/Http/Kernel.php
-
-
-# 03 Voyager installation
-
-composer require tcg/voyager
+# Make folder for console commands
 mkdir app/Console/Commands
+
+# Create console commands to create/delete tenants
+# File path and contents is obvious from the bash commands below.
+
+# For non-linux user. The following code should be read as:
+# Create(replace if exists) file `path/to/a/file.php` with content `... some contents ...`
+# `cat << 'EOF' > path/to/a/file.php
+#  ... some contents ...
+# EOF`
 
 cat << 'EOF' > app/Console/Commands/CreateTenant.php
 <?php
 
 namespace App\Console\Commands;
 
-# use App\Notifications\TenantCreated;
+// use App\Notifications\TenantCreated;
 use App\Tenant;
 use Illuminate\Console\Command;
 
@@ -103,7 +225,6 @@ class CreateTenant extends Command
         $this->info("Admin {$email} can log in using password {$password}");
     }
 }
-
 EOF
 
 cat << 'EOF' > app/Console/Commands/DeleteTenant.php
@@ -134,10 +255,9 @@ class DeleteTenant extends Command
         $this->info($result);
     }
 }
-
-
 EOF
 
+# Add the main class, which will do the tenant creation/deletions job.
 cat << 'EOF' > app/Tenant.php
 <?php
 
@@ -203,8 +323,30 @@ class Tenant
         // make hostname current
         app(Environment::class)->tenant($hostname->website);
 
+        // We rename temporary tenant migrations to avoid creating system tenant tables in the tenant database
+        $migrations = getcwd() . '/database/migrations/';
+        $files_to_preserve = glob($migrations . '*.php');
+
+        foreach ($files_to_preserve as $file) {
+            rename($file, $file . '.txt');
+        }
+
         // \Artisan::call('voyager:install');
         \Artisan::call('voyager:install', ['--with-dummy' => true ]);
+
+        foreach ($files_to_preserve as $file) {
+            rename($file.'.txt', $file);
+        }
+
+        // Cleanup Voyager dummy migrations from system migration folder
+        $voyager_migrations = getcwd() . '/vendor/tcg/voyager/publishable/database/migrations/*.php';
+        $files_to_kill = glob($voyager_migrations);
+        $files_to_kill = array_map('basename', $files_to_kill);
+
+        foreach ($files_to_kill as $file) {
+            $path = $migrations. '/'. $file;
+            unlink($path);
+        }
 
         // Make the registered user the default Admin of the site.
         $admin = static::makeAdmin($name, $email, $password);
@@ -223,13 +365,45 @@ class Tenant
 
     public static function tenantExists($name)
     {
-        $name = $name . '.' . env('APP_URL_BASE');
+        // $name = $name . '.' . env('APP_URL_BASE');
         return Hostname::where('fqdn', $name)->exists();
     }
 }
-
 EOF
 
+# 04 Voyager installation
+
+# Disable autodiscover for Voyager to load it only after your AppServiceProvider is loaded.
+# This is needed, because you must be sure Voyager loads all it's staff after the
+# DB connection is switch to tenant
+
+# Alas CLI composer update fails
+# config extra.laravel.dont-discover tcg/voyager
+# So we need to update composer.json on our own.
+
+# Manual
+# In composer.json add `tcg/voyager` to `dont-disover` array:
+# "extra": {
+#     "laravel": {
+#         "dont-discover": [
+#             "tcg/voyager"
+#         ]
+#     }
+# },
+
+# Bash script 
+sed -i "s/\"dont\-discover\"\: \[\]/\"dont\-discover\"\: [\"tcg\/voyager\"]/g" composer.json
+
+# Install Voyager composer package
+composer require tcg/voyager
+
+# 05 Voyager/tenancy setup
+
+# Add `TCG\Voyager\VoyagerServiceProvider::class` to config/app.php providers array
+sed -i "s/\(App\\\Providers\\\RouteServiceProvider::class,\)/\1\n        TCG\\\Voyager\\\VoyagerServiceProvider::class,/g" config/app.php
+
+# Update your AppServiceProvider.php to switch to tenant DB and filesystem
+# when requesting a tenant URL
 cat << 'EOF' > app/Providers/AppServiceProvider.php
 <?php
 
@@ -251,6 +425,7 @@ class AppServiceProvider extends ServiceProvider
 
         if ($fqdn = optional($env->hostname())->fqdn) {
             config(['database.default' => 'tenant']);
+            config(['voyager.storage.disk' => 'tenant']);
         }
         //
     }
@@ -267,44 +442,102 @@ class AppServiceProvider extends ServiceProvider
 }
 EOF
 
+# Override Hyn Laravel tenanty Mediacontroller to make it work with Voyager.
+# Hyn forces to use `media` folder to store files while Voyager reads root
+# of the storage folder.
+# So we create our own controller.
+cat << 'EOF' > app/Http/Controllers/HynOverrideMediaController.php
+<?php
 
+namespace App\Http\Controllers;
+
+use Hyn\Tenancy\Website\Directory;
+use Illuminate\Support\Facades\Storage;
+
+/**
+ * Class MediaController
+ *
+ * @use Route::get('/storage/{path}', App\MediaController::class)
+ *          ->where('path', '.+')
+ *          ->name('tenant.media');
+ */
+class HynOverrideMediaController extends \Hyn\Tenancy\Controllers\MediaController
+{
+    /**
+     * @var Directory
+     */
+    private $directory;
+
+    public function __construct(Directory $directory)
+    {
+        $this->directory = $directory;
+    }
+
+    public function __invoke(string $path)
+    {
+        // $path = "media/$path";
+
+        if ($this->directory->exists($path)) {
+            return response($this->directory->get($path))
+                ->header('Content-Type', Storage::disk('tenant')->mimeType($path));
+        }
+
+        return abort(404);
+    }
+}
+EOF
+
+# And set all paths requesting uploaded files to use just created controller.
+cat << 'EOF' >> routes/web.php
+Route::get('/storage/{path}', '\App\Http\Controllers\HynOverrideMediaController')
+    ->where('path', '.+')
+    ->name('tenant.media');
+EOF
+
+# 06 Create a tenant
 php artisan config:clear
 
-## Move away tenant migrations to avoid creating system tenant tables in the tenant database
-mkdir tmpmgr
-mv database/migrations/*.php tmpmgr
+# Create a couple of users.
+# This will create a tenant and install Voyager databases for each user.
+php artisan tenant:create kyiv.voyager.test 123456 kyiv@example.com
+php artisan tenant:create dnipro.voyager.test 123456 dnipro@example.com
 
-## Create a user and run voyager:install inside the process
-# php artisan tenant:delete boise.wyzoo.test
-php artisan tenant:create boise.wyzoo.test 123456 boise@example.com
+# Later you may use the command to delet a tenant.
+# php artisan tenant:delete kyiv.voyager.test
+```
 
-## Move back system tenant migrations
-mv tmpmgr/*.php database/migrations/
-rm -rf tmpmgr
+### Check results
 
-## Cleanup Voyager dummy migrations from system migration folder
-for entry in "vendor/tcg/voyager/publishable/database/migrations"/*
-do
-   rm database/migrations/${entry##*/}
-done
+Open [http://kyiv.voyager.test/admin](http://kyiv.voyager.test/admin) and
+[http://dnipro.voyager.test/admin](http://dnipro.voyager.test/admin)
+in your browser and login using credentials of the user you have just created.
 
-## Wrap Voyager routes in tenant.enforce middleware
-sed -i "s/Route::group(\['prefix' => 'admin'\], function () {/Route::group(\['prefix' => 'admin', 'middleware' => 'tenancy.enforce' \], function () {/g" routes/web.php
+You can also use Voyager dummy data user to login: `admin@admin.com`/`password`.
 
-POLICIES="\
-        'TCG\\\Voyager\\\Models\\\Setting' => 'TCG\\\Voyager\\\Policies\\\SettingPolicy',\n\
-        'TCG\\\Voyager\\\Models\\\MenuItem' => 'TCG\\\Voyager\\\Policies\\\MenuItemPolicy',\n\
-        'TCG\\\Voyager\\\Models\\\User' => 'TCG\\\Voyager\\\Policies\\\UserPolicy',\n\
-        'TCG\\\Voyager\\\Models\\\Menu' => 'TCG\\\Voyager\\\Policies\\\BasePolicy',\n\
-        'TCG\\\Voyager\\\Models\\\Role' => 'TCG\\\Voyager\\\Policies\\\BasePolicy',\n\
-        'TCG\\\Voyager\\\Models\\\Category' => 'TCG\\\Voyager\\\Policies\\\BasePolicy',\n\
-        'TCG\\\Voyager\\\Models\\\Post' => 'TCG\\\Voyager\\\Policies\\\BasePolicy',\n\
-        'TCG\\\Voyager\\\Models\\\Page' => 'TCG\\\Voyager\\\Policies\\\BasePolicy',";
-sed -i "s/\('App\\\Model' => 'App\\\Policies\\\ModelPolicy',\)/\1\n$POLICIES/g" app/Providers/AuthServiceProvider.php
+Try editing data and uploading files to different tenants to be sure the data is different per tenant.
 
+## Working with docker
 
-# php artisan vendor:publish --provider=VoyagerServiceProvider
-# php artisan vendor:publish --provider=ImageServiceProviderLaravel5
-# php artisan voyager:install
+Go to your project folder and go to `laradock` subfolder.
 
+### Stop docker
+
+```bash
+docker-compose down
+```
+
+### Run docker
+
+Do not run just `docker-compose up`. Laradock contains dozens of containers and will try to run all of them.
+
+Run only needed containers.
+
+```bash
+docker-compose up -d postgres nginx
+```
+
+If you need, you can also run `adminer`
+
+```bash
+docker-compose up -d adminer
 ```
