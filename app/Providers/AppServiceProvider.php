@@ -17,8 +17,10 @@ class AppServiceProvider extends ServiceProvider
         $env = app(Environment::class);
 
         if ($fqdn = optional($env->hostname())->fqdn) {
-            config(['database.default' => 'tenant']);
-            config(['voyager.storage.disk' => 'tenant']);
+            if (env('TENANCY_MAIN_SITE') !== $fqdn ) {
+                config(['database.default' => 'tenant']);
+                config(['voyager.storage.disk' => 'tenant']);
+            }
         }
         //
     }

@@ -13,6 +13,7 @@ class Kernel extends ConsoleKernel
      * @var array
      */
     protected $commands = [
+        \TCG\Voyager\Commands\InstallCommand::class,
         //
     ];
 

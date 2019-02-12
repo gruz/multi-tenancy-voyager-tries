@@ -43,7 +43,7 @@ class Tenant
         }
     }
 
-    public static function registerTenant($name, $email, $password): Tenant
+    public static function registerTenant($name, $email = null, $password = null): Tenant
     {
         // Convert all to lowercase
         $name = strtolower($name);
@@ -71,6 +71,7 @@ class Tenant
         }
 
         // \Artisan::call('voyager:install');
+        \Artisan::call('config:clear');
         \Artisan::call('voyager:install', ['--with-dummy' => true ]);
 
         foreach ($files_to_preserve as $file) {
@@ -88,7 +89,10 @@ class Tenant
         }
 
         // Make the registered user the default Admin of the site.
-        $admin = static::makeAdmin($name, $email, $password);
+        $admin = null;
+        if ($email) {
+            $admin = static::makeAdmin($name, $email, $password);
+        }
 
         return new Tenant($website, $hostname, $admin);
     }
