@@ -681,7 +681,7 @@ php artisan config:clear
 
 # Create a couple of users.
 # This will create a tenant and install Voyager databases for each user.
-php artisan tenant:create kyiv.voyager.test 123456 kyiv@example.com
+php artisan tenant:create "kyiv."$SYSTEM_FQDN 123456 kyiv@example.com
 php artisan tenant:create dnipro.voyager.test 123456 dnipro@example.com
 
 # Later you may use the command to delet a tenant.
