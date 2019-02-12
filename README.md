@@ -417,6 +417,106 @@ sed -i "s/\(App\\\Providers\\\RouteServiceProvider::class,\)/\1\n        TCG\\\V
 # Register Voyager install command to app/Console/Kernel.php. Will be needed to create tenants via system Voyager.
 sed -i "s/\(protected \$commands = \[\)/\1\n        \\\TCG\\\Voyager\\\Commands\\\InstallCommand::class,/g" app/Console/Kernel.php
 
+
+
+# Update your AppServiceProvider.php to switch to tenant DB and filesystem
+# when requesting a tenant URL
+cat << 'EOF' > app/Providers/AppServiceProvider.php
+<?php
+
+namespace App\Providers;
+
+use Hyn\Tenancy\Environment;
+use Illuminate\Support\ServiceProvider;
+
+class AppServiceProvider extends ServiceProvider
+{
+    /**
+     * Bootstrap any application services.
+     *
+     * @return void
+     */
+    public function boot()
+    {
+        $env = app(Environment::class);
+
+        if ($fqdn = optional($env->hostname())->fqdn) {
+            if (env('TENANCY_MAIN_SITE') !== $fqdn ) {
+                config(['database.default' => 'tenant']);
+                config(['voyager.storage.disk' => 'tenant']);
+            }
+        }
+        //
+    }
+
+    /**
+     * Register any application services.
+     *
+     * @return void
+     */
+    public function register()
+    {
+        //
+    }
+}
+EOF
+
+# Override Hyn Laravel tenanty Mediacontroller to make it work with Voyager.
+# Hyn forces to use `media` folder to store files while Voyager reads root
+# of the storage folder.
+# So we create our own controller.
+cat << 'EOF' > app/Http/Controllers/HynOverrideMediaController.php
+<?php
+
+namespace App\Http\Controllers;
+
+use Hyn\Tenancy\Website\Directory;
+use Illuminate\Support\Facades\Storage;
+
+/**
+ * Class MediaController
+ *
+ * @use Route::get('/storage/{path}', App\MediaController::class)
+ *          ->where('path', '.+')
+ *          ->name('tenant.media');
+ */
+class HynOverrideMediaController extends \Hyn\Tenancy\Controllers\MediaController
+{
+    /**
+     * @var Directory
+     */
+    private $directory;
+
+    public function __construct(Directory $directory)
+    {
+        $this->directory = $directory;
+    }
+
+    public function __invoke(string $path)
+    {
+        // $path = "media/$path";
+
+        if ($this->directory->exists($path)) {
+            return response($this->directory->get($path))
+                ->header('Content-Type', Storage::disk('tenant')->mimeType($path));
+        }
+
+        return abort(404);
+    }
+}
+EOF
+
+# And set all paths requesting uploaded files to use just created controller.
+cat << 'EOF' >> routes/web.php
+Route::get('/storage/{path}', '\App\Http\Controllers\HynOverrideMediaController')
+    ->where('path', '.+')
+    ->name('tenant.media');
+EOF
+
+# 06 Install System Voyager
+
+php artisan voyager:install --with-dummy
+
 # Create a model for system Voyager
 php artisan make:model Hostname
 
@@ -578,101 +678,10 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
 }
 EOF
 
-# Update your AppServiceProvider.php to switch to tenant DB and filesystem
-# when requesting a tenant URL
-cat << 'EOF' > app/Providers/AppServiceProvider.php
-<?php
+Create $SYSTEM_FQDN in hostnames table
 
-namespace App\Providers;
+Create Bread for hostnames
 
-use Hyn\Tenancy\Environment;
-use Illuminate\Support\ServiceProvider;
-
-class AppServiceProvider extends ServiceProvider
-{
-    /**
-     * Bootstrap any application services.
-     *
-     * @return void
-     */
-    public function boot()
-    {
-        $env = app(Environment::class);
-
-        if ($fqdn = optional($env->hostname())->fqdn) {
-            if (env('TENANCY_MAIN_SITE') !== $fqdn ) {
-                config(['database.default' => 'tenant']);
-                config(['voyager.storage.disk' => 'tenant']);
-            }
-        }
-        //
-    }
-
-    /**
-     * Register any application services.
-     *
-     * @return void
-     */
-    public function register()
-    {
-        //
-    }
-}
-EOF
-
-# Override Hyn Laravel tenanty Mediacontroller to make it work with Voyager.
-# Hyn forces to use `media` folder to store files while Voyager reads root
-# of the storage folder.
-# So we create our own controller.
-cat << 'EOF' > app/Http/Controllers/HynOverrideMediaController.php
-<?php
-
-namespace App\Http\Controllers;
-
-use Hyn\Tenancy\Website\Directory;
-use Illuminate\Support\Facades\Storage;
-
-/**
- * Class MediaController
- *
- * @use Route::get('/storage/{path}', App\MediaController::class)
- *          ->where('path', '.+')
- *          ->name('tenant.media');
- */
-class HynOverrideMediaController extends \Hyn\Tenancy\Controllers\MediaController
-{
-    /**
-     * @var Directory
-     */
-    private $directory;
-
-    public function __construct(Directory $directory)
-    {
-        $this->directory = $directory;
-    }
-
-    public function __invoke(string $path)
-    {
-        // $path = "media/$path";
-
-        if ($this->directory->exists($path)) {
-            return response($this->directory->get($path))
-                ->header('Content-Type', Storage::disk('tenant')->mimeType($path));
-        }
-
-        return abort(404);
-    }
-}
-EOF
-
-# And set all paths requesting uploaded files to use just created controller.
-cat << 'EOF' >> routes/web.php
-Route::get('/storage/{path}', '\App\Http\Controllers\HynOverrideMediaController')
-    ->where('path', '.+')
-    ->name('tenant.media');
-EOF
-
-# 06 Install System Voyager
 
 
 
