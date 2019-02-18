@@ -2,14 +2,14 @@
 
 ## Intro
 
-We will install docker environment, [laravel-tenancy.com](https://laravel-tenancy.com/) 
+We will:
+
+* Install docker environment, [laravel-tenancy.com](https://laravel-tenancy.com/)
 and [Voyager admin panel](https://laravelvoyager.com/) both per-tenant and as a system instance.
-
-We will use system Voyager to create tenants.
-
+* Use system Voyager to create tenants.
 After a tenant is created, you will be able to login into a Voyager admin per tenant.
-
-We will use Postgres database.
+* Use Postgres database.
+* Install Voyager dummy data.
 
 ## Prerequisites
 
@@ -27,7 +27,7 @@ Make sure you have all other dockers down and standard ports free to avoid confl
 
 To work at localhost we need to have some test domains in your system.
 
-Let's assume our system domain will be `voyager.test` and tenant domains will be some subdomains. You can use 
+Let's assume our system domain will be `voyager.test` and tenant domains will be some subdomains. You can use
 non-subdomains domains for tenants as well.
 
 So you need to add the domains to your hosts file
@@ -73,6 +73,9 @@ exit;
 ```
 
 ### Docker setup
+
+Docker will setup a database for use, so we don't need to create it manually
+or grant permissions to the database user. If you perfer to use another environment, you have to create database/user/permissions according to [tenancy installation docs](https://laravel-tenancy.com/docs/hyn/5.3/installation)
 
 ```bash
 ## Create your project folder and install laradock (a docker for laravel)
@@ -155,6 +158,7 @@ sed -i "s/'pgsql' => \[/'system' => [/g" ./config/database.php
 composer require "hyn/multi-tenant:5.3.*"
 php artisan vendor:publish --tag=tenancy
 
+
 ## Allow auto deleting tenant folders on tenant delete in `config/tenancy.php`. Optional.
 ## You should read the file carefully and realize which options it has.
 sed -i "s/'auto-delete-tenant-directory' => false/'auto-delete-tenant-directory' => true/g" ./config/tenancy.php
@@ -165,7 +169,7 @@ SYSTEM_FQDN="voyager.test"
 APP_URL="http://"$SYSTEM_FQDN;
 sed -i "s|APP_URL=http:\/\/localhost|APP_URL=${APP_URL}|g" .env
 
-## Append to your laravel .env file with the following options. Remember 
+## Append to your laravel .env file with the following options. Remember
 echo '' >> .env
 echo '# Laravel-tenancy config' >> .env
 echo 'TENANCY_DATABASE_AUTO_DELETE=true' >> .env
@@ -186,16 +190,7 @@ cp database/migrations/2014_10_12_100000_create_password_resets_table.php databa
 # `hostnames`, `migrations`, `websites`
 php artisan migrate --database=system
 
-# 03 Adding CLI laravel commands to create tenants
-
-## Though the tutorial purpose is to be able to create tenants from a system Voyager instance, we still use
-## the following commands in the background. So they are needed.
-
-# Make folder for console commands
-mkdir app/Console/Commands
-
-# Create console commands to create/delete tenants
-# File path and contents is obvious from the bash commands below.
+# 03 Add a helper class, which will do the tenant creation/deletions job
 
 # For non-linux user. The following code should be read as:
 # Create(replace if exists) file `path/to/a/file.php` with content `... some contents ...`
@@ -203,73 +198,6 @@ mkdir app/Console/Commands
 #  ... some contents ...
 # EOF`
 
-cat << 'EOF' > app/Console/Commands/CreateTenant.php
-<?php
-
-namespace App\Console\Commands;
-
-// use App\Notifications\TenantCreated;
-use App\Tenant;
-use Illuminate\Console\Command;
-
-class CreateTenant extends Command
-{
-    protected $signature = 'tenant:create {name} {password} {email}';
-
-    protected $description = 'Creates a tenant with the provided name and email address e.g. php artisan tenant:create boise test boise@example.com';
-
-    public function handle()
-    {
-        $name = $this->argument('name');
-        $email = $this->argument('email');
-        $password = $this->argument('password');
-
-        if (Tenant::tenantExists($name)) {
-            $this->error("A tenant with name '{$name}' already exists.");
-            return;
-        }
-
-        $tenant = Tenant::registerTenant($name, $email, $password);
-        $this->info("Tenant '{$name}' is created and is now accessible at {$tenant->hostname->fqdn}");
-
-        // invite admin
-        // $tenant->admin->notify(new TenantCreated($tenant->hostname));
-        $this->info("Admin {$email} can log in using password {$password}");
-    }
-}
-EOF
-
-cat << 'EOF' > app/Console/Commands/DeleteTenant.php
-<?php
-
-namespace App\Console\Commands;
-
-use App\Tenant;
-use Illuminate\Console\Command;
-
-class DeleteTenant extends Command
-{
-    protected $signature = 'tenant:delete {name}';
-    protected $description = 'Deletes a tenant of the provided name. Only available on the local environment e.g. php artisan tenant:delete boise';
-
-    public function handle()
-    {
-        // because this is a destructive command, we'll only allow to run this command
-        // if you are on the local environment or testing
-        if (!app()->isLocal()  && !app()->runningUnitTests()) {
-            $this->error('This command is only available on the local environment.');
-
-            return;
-        }
-
-        $name = $this->argument('name');
-        $result = Tenant::delete($name);
-        $this->info($result);
-    }
-}
-EOF
-
-# Add the main class, which will do the tenant creation/deletions job.
 cat << 'EOF' > app/Tenant.php
 <?php
 
@@ -296,6 +224,11 @@ class Tenant
         $this->admin = $admin;
     }
 
+    public static function getRootFqdn()
+    {
+        return Hostname::where('website_id', null)->first()->fqdn;
+    }
+
     public static function delete($name)
     {
         // $baseUrl = env('APP_URL_BASE');
@@ -304,6 +237,15 @@ class Tenant
             app(HostnameRepository::class)->delete($tenant, true);
             app(WebsiteRepository::class)->delete($tenant->website, true);
             return "Tenant {$name} successfully deleted.";
+        }
+    }
+
+    public static function deleteById($id)
+    {
+        if ($tenant = Hostname::where('id', $id)->firstOrFail()) {
+            app(HostnameRepository::class)->delete($tenant, true);
+            app(WebsiteRepository::class)->delete($tenant->website, true);
+            return "Tenant with id {$id} successfully deleted.";
         }
     }
 
@@ -346,6 +288,7 @@ class Tenant
         // \Artisan::call('voyager:install');
         \Artisan::call('config:clear');
         \Artisan::call('voyager:install', ['--with-dummy' => true ]);
+        // \Artisan::call('passport:install');
 
         foreach ($files_to_preserve as $file) {
             rename($file.'.txt', $file);
@@ -391,10 +334,10 @@ EOF
 
 # Disable autodiscover for Voyager to load it only after your AppServiceProvider is loaded.
 # This is needed, because you must be sure Voyager loads all it's staff after the
-# DB connection is switch to tenant
+# DB connection is switched to tenant
 
-# Alas CLI composer update fails
-# config extra.laravel.dont-discover tcg/voyager
+# Alas composer CLI way to update composer.json fails here (is not able to write as waay)
+# `composer config extra.laravel.dont-discover tcg/voyager`
 # So we need to update composer.json on our own.
 
 # Manual
@@ -407,13 +350,13 @@ EOF
 #     }
 # },
 
-# Bash script 
+# Bash script
 sed -i "s/\"dont\-discover\"\: \[\]/\"dont\-discover\"\: [\"tcg\/voyager\"]/g" composer.json
 
 # Install Voyager composer package
 composer require tcg/voyager
 
-# 05 Voyager/tenancy setup
+# 05 Voyager setup
 
 # Add `TCG\Voyager\VoyagerServiceProvider::class` to config/app.php providers array
 sed -i "s/\(App\\\Providers\\\RouteServiceProvider::class,\)/\1\n        TCG\\\Voyager\\\VoyagerServiceProvider::class,/g" config/app.php
@@ -421,18 +364,19 @@ sed -i "s/\(App\\\Providers\\\RouteServiceProvider::class,\)/\1\n        TCG\\\V
 # Register Voyager install command to app/Console/Kernel.php. Will be needed to create tenants via system Voyager.
 sed -i "s/\(protected \$commands = \[\)/\1\n        \\\TCG\\\Voyager\\\Commands\\\InstallCommand::class,/g" app/Console/Kernel.php
 
-
-
 # Update your AppServiceProvider.php to switch to tenant DB and filesystem
 # when requesting a tenant URL
 cat << 'EOF' > app/Providers/AppServiceProvider.php
 <?php
-
 namespace App\Providers;
-
 use Hyn\Tenancy\Environment;
+use TCG\Voyager\Facades\Voyager;
+use App\Actions\TenantViewAction;
+use App\Actions\TenantLoginAction;
+use App\Actions\TenantDeleteAction;
+use TCG\Voyager\Actions\ViewAction;
+use TCG\Voyager\Actions\DeleteAction;
 use Illuminate\Support\ServiceProvider;
-
 class AppServiceProvider extends ServiceProvider
 {
     /**
@@ -443,16 +387,21 @@ class AppServiceProvider extends ServiceProvider
     public function boot()
     {
         $env = app(Environment::class);
-
+        $isSystem = true; 
         if ($fqdn = optional($env->hostname())->fqdn) {
             if (\App\Tenant::getRootFqdn() !== $fqdn ) {
                 config(['database.default' => 'tenant']);
                 config(['voyager.storage.disk' => 'tenant']);
+                $isSystem = false; 
             }
+        }
+        if ($isSystem) {
+            Voyager::addAction(TenantLoginAction::class);
+            Voyager::replaceAction(ViewAction::class, TenantViewAction::class);
+            Voyager::replaceAction(DeleteAction::class, TenantDeleteAction::class);
         }
         //
     }
-
     /**
      * Register any application services.
      *
@@ -471,12 +420,9 @@ EOF
 # So we create our own controller.
 cat << 'EOF' > app/Http/Controllers/HynOverrideMediaController.php
 <?php
-
 namespace App\Http\Controllers;
-
 use Hyn\Tenancy\Website\Directory;
 use Illuminate\Support\Facades\Storage;
-
 /**
  * Class MediaController
  *
@@ -490,21 +436,17 @@ class HynOverrideMediaController extends \Hyn\Tenancy\Controllers\MediaControlle
      * @var Directory
      */
     private $directory;
-
     public function __construct(Directory $directory)
     {
         $this->directory = $directory;
     }
-
     public function __invoke(string $path)
     {
         // $path = "media/$path";
-
         if ($this->directory->exists($path)) {
             return response($this->directory->get($path))
                 ->header('Content-Type', Storage::disk('tenant')->mimeType($path));
         }
-
         return abort(404);
     }
 }
@@ -517,25 +459,58 @@ Route::get('/storage/{path}', '\App\Http\Controllers\HynOverrideMediaController'
     ->name('tenant.media');
 EOF
 
-# 06 Install System Voyager
-
-php artisan voyager:install --with-dummy
-
 # Create a model for system Voyager
 php artisan make:model Hostname
 
-# Add a system Voyager controller to create/delete tenants
-cat << 'EOF' > app/Http/Controllers/VoyagerTenantsController.php
+# Create a system domain seeder and run it
+# Don't forget to replace 'voyager.test' with your system domain if needed.
+cat << 'EOF' > database/seeds/HostnamesTableSeeder.php
 <?php
 
-namespace App\Http\Controllers;
+use App\Hostname;
+use Illuminate\Database\Seeder;
 
+class HostnamesTableSeeder extends Seeder
+{
+    /**
+     * Auto generated seed file.
+     */
+    /**
+     * Auto generated seed file.
+     *
+     * @return void
+     */
+    public function run()
+    {
+        $hostname = Hostname::firstOrNew(['fqdn' => 'voyager.test']);
+
+        if (!$hostname->exists) {
+            $hostname->fill([
+                    'fqdn' => 'voyager.test',
+                ])->save();
+        }
+    }
+}
+EOF
+composer dump-autoload
+php artisan db:seed --class=HostnamesTableSeeder
+
+# Finally install system voyager with dummy data. We need dummy data to have some fallback data for tenants, 
+# if they use dummy as well.
+php artisan voyager:install --with-dummy
+
+# Create a controller for the system Voyager to manage tenants
+cat << 'EOF' > app/Http/Controllers/VoyagerTenantsController.php
+<?php
+namespace App\Http\Controllers;
 use App\Tenant;
 use Hyn\Tenancy\Environment;
 use Illuminate\Http\Request;
+use Hyn\Tenancy\Models\Hostname;
 use TCG\Voyager\Facades\Voyager;
+use Illuminate\Support\Facades\DB;
+use TCG\Voyager\Events\BreadDataAdded;
 use TCG\Voyager\Events\BreadDataDeleted;
-
 class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBaseController
 {
     /**
@@ -545,20 +520,15 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
      *
      * @return bool
      */
-    private function isTenantAdd(Request $request) {
+    private function isTenantOperation(Request $request) {
         $slug = $this->getSlug($request);
-
         $env = app(Environment::class);
         $fqdn = optional($env->hostname())->fqdn;
-        $systemSite = \App\Tenant::getRootFqdn();
-
         if (\App\Tenant::getRootFqdn() !== $fqdn || 'hostnames' !== $slug) {
             return false;
         }
-
         return true;
     }
-
     /**
      * POST BRE(A)D - Store data.
      *
@@ -568,43 +538,28 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
      */
     public function store(Request $request)
     {
-        if (!$this->isTenantAdd($request)) {
+        if (!$this->isTenantOperation($request)) {
             return parent::store($request);
         }
-
+        $fqdn = $request->get('fqdn') . '.' . \App\Tenant::getRootFqdn();
+        $request->offsetSet('fqdn', $fqdn);
         $slug = $this->getSlug($request);
-
         $dataType = Voyager::model('DataType')->where('slug', '=', $slug)->first();
-
         // Check permission
         $this->authorize('add', app($dataType->model_name));
-
         // Validate fields with ajax
         $val = $this->validateBread($request->all(), $dataType->addRows);
-
         if ($val->fails()) {
             return response()->json(['errors' => $val->messages()]);
         }
-
         if (!$request->has('_validate')) {
-            $name = $request->get('fqdn');
-
-            if (Tenant::tenantExists($name)) {
-                $messages = ["A tenant with name '{$name}' already exists."];
-                return response()->json(['errors' => $messages]);
-            }
-
-            $tenant = Tenant::registerTenant($name);
-            // $this->info("Tenant '{$name}' is created and is now accessible at {$tenant->hostname->fqdn}");
-
+            $tenant = Tenant::registerTenant($fqdn);
+            $data = Hostname::where('fqdn', $fqdn)->firstOrFail(); 
             // $data = $this->insertUpdateData($request, $slug, $dataType->addRows, new $dataType->model_name());
-
-            // event(new BreadDataAdded($dataType, $data));
-
+            event(new BreadDataAdded($dataType, $data));
             if ($request->ajax()) {
                 return response()->json(['success' => true, 'data' => $data]);
             }
-
             return redirect()
                 ->route("voyager.{$dataType->slug}.index")
                 ->with([
@@ -613,8 +568,6 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
                     ]);
         }
     }
-
-
     //***************************************
     //                _____
     //               |  __ \
@@ -626,20 +579,25 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
     //         Delete an item BREA(D)
     //
     //****************************************
-
     public function destroy(Request $request, $id)
     {
-        if (!$this->isTenantAdd($request)) {
-            return parent::store($request);
+        if (!$this->isTenantOperation($request)) {
+            return parent::destroy($request);
         }
-
         $slug = $this->getSlug($request);
-
         $dataType = Voyager::model('DataType')->where('slug', '=', $slug)->first();
-
+        $fqdn = Hostname::where('id', $id)->firstOrFail(['fqdn'])->fqdn; 
+        $systemSite = \App\Tenant::getRootFqdn();
+        if ( $systemSite === $fqdn ) {
+            return redirect()
+                ->route("voyager.{$dataType->slug}.index")
+                ->with([
+                        'message'    => __('voyager::generic.system.site.cannot.be.deleted'),
+                        'alert-type' => 'error',
+                    ]);
+        }
         // Check permission
         $this->authorize('delete', app($dataType->model_name));
-
         // Init array of IDs
         $ids = [];
         if (empty($id)) {
@@ -649,19 +607,16 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
             // Single item delete, get ID from URL
             $ids[] = $id;
         }
-
+        $res = false;
         foreach ($ids as $id) {
             $data = call_user_func([$dataType->model_name, 'findOrFail'], $id, $columns = array('fqdn') );
             $this->cleanup($dataType, $data);
-            $hostname = $data->fqdn;
-            $res = Tenant::delete($hostname);
+            $res = Tenant::deleteById($id);
         }
-
-
         $displayName = count($ids) > 1 ? $dataType->display_name_plural : $dataType->display_name_singular;
-
-
-        // $res = $data->destroy($ids);
+        // TODO ##mygruz20190213014253 
+        // If deleting several domains, we can get partial successfull result. We must properly handle the situations.
+        // Currently if we have at least one (or last) success, we return a success message.
         $data = $res
             ? [
                 'message'    => __('voyager::generic.successfully_deleted')." {$displayName}",
@@ -671,43 +626,195 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
                 'message'    => __('voyager::generic.error_deleting')." {$displayName}",
                 'alert-type' => 'error',
             ];
-
         if ($res) {
             event(new BreadDataDeleted($dataType, $data));
         }
-
         return redirect()->route("voyager.{$dataType->slug}.index")->with($data);
     }
-
 }
 EOF
 
-Create $SYSTEM_FQDN in hostnames table
+# Create Bread for hostnames in system Voyager
+cat << 'EOF' > database/seeds/DataTypesSystemTableSeeder.php
+<?php
 
-Create Bread for hostnames
+use Illuminate\Database\Seeder;
+use TCG\Voyager\Models\DataType;
+
+class DataTypesSystemTableSeeder extends Seeder
+{
+    /**
+     * Auto generated seed file.
+     */
+    public function run()
+    {
+        $dataType = $this->dataType('slug', 'hostnames');
+        if (!$dataType->exists) {
+            $dataType->fill([
+                'name'                  => 'hostnames',
+                'display_name_singular' => __('Hostname'),
+                'display_name_plural'   => __('Hostnames'),
+                'icon'                  => 'voyager-ship',
+                'model_name'            => 'App\\Hostname',
+                'controller'            => '\\App\\Http\\Controllers\\VoyagerTenantsController',
+                'generate_permissions'  => 1,
+                'description'           => '',
+            ])->save();
+        }
+    }
+
+    /**
+     * [dataType description].
+     *
+     * @param [type] $field [description]
+     * @param [type] $for   [description]
+     *
+     * @return [type] [description]
+     */
+    protected function dataType($field, $for)
+    {
+        return DataType::firstOrNew([$field => $for]);
+    }
+}
+EOF
+
+composer dump-autoload
+php artisan db:seed --class=DataTypesSystemTableSeeder
 
 
+# Alter action buttons at system hostnames Voyager view to have login button, alter view button and block system domain deletion
+mkdir app/Actions/
+cat << 'EOF' > app/Actions/TenantDeleteAction.php
+<?php
+
+namespace App\Actions;
+
+use TCG\Voyager\Actions\DeleteAction;
+
+class TenantDeleteAction extends DeleteAction
+{
+    public function getAttributes()
+    {
+        $fqdn = $this->data->fqdn; 
+        $systemSite = \App\Tenant::getRootFqdn();
+
+        if ( $systemSite === $fqdn ) {
+            return [
+                'class' => 'hide',
+            ];
+        }
+        else {
+            return parent::getAttributes();
+        }
+    }
+}
+EOF
+cat << 'EOF' > app/Actions/TenantLoginAction.php
+<?php
+
+namespace App\Actions;
+
+use TCG\Voyager\Actions\AbstractAction;
+
+class TenantLoginAction extends AbstractAction
+{
+    public function getTitle()
+    {
+        return __('voyager::generic.login');
+    }
+
+    public function getIcon()
+    {
+        return 'voyager-ship';
+    }
+
+    public function getPolicy()
+    {
+        return 'read';
+    }
+
+    public function getDataType()
+    {
+        return 'hostnames';
+    }
+
+    public function getAttributes()
+    {
+        $fqdn = $this->data->fqdn; 
+        $systemSite = \App\Tenant::getRootFqdn();
+
+        if ( $systemSite === $fqdn ) {
+            return [
+                'class' => 'hide',
+            ];
+        }
+        else {
+
+            return [
+                'class' => 'btn btn-sm btn-warning pull-left login',
+                'target' => '_blank'
+            ];
+        }
 
 
-# 07 Create a tenant
+    }
+
+    public function getDefaultRoute()
+    {
+        $route = '//'. $this->data->fqdn . '.' . \App\Tenant::getRootFqdn()  . '/admin';
+
+        return $route;
+    }
+}
+EOF
+cat << 'EOF' > app/Actions/TenantViewAction.php
+<?php
+
+namespace App\Actions;
+
+use TCG\Voyager\Actions\ViewAction;
+
+class TenantViewAction extends ViewAction
+{
+    public function getAttributes()
+    {
+        $fqdn = $this->data->fqdn; 
+        $systemSite = \App\Tenant::getRootFqdn();
+
+        if ( $systemSite === $fqdn ) {
+            return [
+                'class' => 'hide',
+            ];
+        }
+        else {
+            return array_merge( parent::getAttributes(), [ 'target' => '_blank'] );
+        }
+
+
+    }
+
+    public function getDefaultRoute()
+    {
+        $route = '//'. $this->data->fqdn;
+
+        return $route;
+    }
+}
+EOF
+
 php artisan config:clear
 
-# Create a couple of users.
-# This will create a tenant and install Voyager databases for each user.
-php artisan tenant:create "kyiv."$SYSTEM_FQDN 123456 kyiv@example.com
-php artisan tenant:create dnipro.voyager.test 123456 dnipro@example.com
-
-# Later you may use the command to delet a tenant.
-# php artisan tenant:delete kyiv.voyager.test
 ```
 
 ### Check results
 
-Open [http://kyiv.voyager.test/admin](http://kyiv.voyager.test/admin) and
-[http://dnipro.voyager.test/admin](http://dnipro.voyager.test/admin)
-in your browser and login using credentials of the user you have just created.
+Open [http://voyager.test/admin](http://voyager.test/admin) and login with `admin@admin.com`/`password`
 
-You can also use Voyager dummy data user to login: `admin@admin.com`/`password`.
+Go to `Hostnames` sidebar menu and create a tenant like `dnipro.voyager.test` or `kyiv.voyager.test`. 
+Remember editing `hosts` file at the tutorial begining.
+
+Open newly created [http://dnipro.voyager.test/admin](http://dnipro.voyager.test/admin) 
+in your browser and login using credentials `admin@admin.com`/`password`. 
 
 Try editing data and uploading files to different tenants to be sure the data is different per tenant.
 

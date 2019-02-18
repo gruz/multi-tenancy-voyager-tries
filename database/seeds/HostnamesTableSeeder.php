@@ -15,11 +15,11 @@ class HostnamesTableSeeder extends Seeder
      */
     public function run()
     {
-        $hostname = Hostname::firstOrNew(['fqdn' => 'voyager1.test']);
+        $hostname = Hostname::firstOrNew(['fqdn' => 'voyager.test']);
 
         if (!$hostname->exists) {
             $hostname->fill([
-                    'fqdn' => 'voyager1.test',
+                    'fqdn' => 'voyager.test',
                 ])->save();
         }
     }
