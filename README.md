@@ -8,11 +8,6 @@ We will use CLI commands to create tenants (domains). After the tenant is create
 
 We will use Postgres database.
 
-> Please note:
->
-> 1. This tutorial is written as a Linux bash script with comments. So a linux user can copy/paste the bash script code into one's terminal.
-> 2. After docker initialization you will need to run at least some commands (like `composer update`, `php artisan ...`) inside the docker (linux) environment. This means you will become a linux user, thus see p.1
-
 ## Prerequisites
 
 ### Software needed
@@ -21,15 +16,20 @@ We will use Postgres database.
 * docker-compose
 * git
 
-### System configuration
+### System configuration/state
 
 Make sure you have all other dockers down and standard ports free to avoid conflicts.
 
-## Installation
+### Domain names
 
-### Add domains for tenant tests to your hosts file
+To work at localhost we need to have some test domains in your system.
 
-#### Manual action
+Let's assume our system domain will be `voyager.test` and tenant domains will be some subdomains. You can use 
+non-subdomains domains for tenants as well.
+
+So you need to add the domains to your hosts file
+
+#### Manual hosts edit
 
 Edit you hosts file to add test domains.
 
@@ -43,11 +43,13 @@ Add lines like the following ones to have local development domains.
 127.0.0.1 kyiv.voyager.test
 127.0.0.1 dnipro.voyager.test
 127.0.0.1 lviv.voyager.test
+127.0.0.1 odesa.voyager.test
+127.0.0.1 poltava.voyager.test
 ```
 
 etc...
 
-#### Linux script way bash
+##### Linux script way bash
 
 Open terminal window and run `sudo -i` to login as sudo user.
 
@@ -56,7 +58,7 @@ Next paste the script into your terminal.
 ```bash
 FILE=/etc/hosts;
 NEW_IP=127.0.0.1;
-HOSTS=("voyager.test" "kyiv.voyager.test" "dnipro.voyager.test" "lviv.voyager.test" "odesa.voyager.test" );
+HOSTS=("voyager.test" "kyiv.voyager.test" "dnipro.voyager.test" "lviv.voyager.test" "odesa.voyager.test" "poltava.voyager.test" );
 
 for HOST in ${HOSTS[*]}
 do
@@ -66,6 +68,13 @@ done
 exit;
 
 ```
+
+## Manual installation from scratch
+
+For the purpose of learning and better understanding, it's recommended to pass the manual installation.
+
+The manual installation tutorial is written as a commented linux bash script. Since we work with docker, you can can
+copy/paste the script into your linux (docker) termianl to automate all or some parts of the manual.
 
 ### Docker setup
 
@@ -113,6 +122,7 @@ Otherwise read comments to get better understanding what is going on.
 
 ```bash
 # 01 Create laravel project.
+
 # We need an intermediate tmp folder as our current folder is not
 # empty (contains laradoc folder) and laravel installation would fail otherwise
 composer create-project --prefer-dist laravel/laravel tmp
@@ -154,7 +164,7 @@ php artisan vendor:publish --tag=tenancy
 ## You should read the file carefully and realize which options it has.
 sed -i "s/'auto-delete-tenant-directory' => false/'auto-delete-tenant-directory' => true/g" ./config/tenancy.php
 
-# Edit .env file and change APP_URL to our system URL (the main web-site URL)
+# Edit .env file and change APP_URL to our system URL (the main web-site URL).
 SYSTEM_FQDN="voyager.test"
 APP_URL="http://"$SYSTEM_FQDN;
 sed -i "s|APP_URL=http:\/\/localhost|APP_URL=${APP_URL}|g" .env
@@ -1347,7 +1357,7 @@ php artisan tenant:create dnipro.voyager.test 123456 dnipro@example.com
 # php artisan tenant:delete kyiv.voyager.test
 ```
 
-### Check results
+#### Check results
 
 Open [http://kyiv.voyager.test/admin](http://kyiv.voyager.test/admin) and
 [http://dnipro.voyager.test/admin](http://dnipro.voyager.test/admin)
