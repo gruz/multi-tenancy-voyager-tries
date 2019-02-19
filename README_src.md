@@ -2,14 +2,16 @@
 
 ## Intro
 
-We will:
+What we will:
 
-* Install docker environment, [laravel-tenancy.com](https://laravel-tenancy.com/)
-and [Voyager admin panel](https://laravelvoyager.com/) both per-tenant and as a system instance.
-* Use system Voyager to create tenants.
-After a tenant is created, you will be able to login into a Voyager admin per tenant.
-* Use Postgres database.
-* Install Voyager dummy data.
+* **Optional**. Install docker environment with Postgres database.
+* Install [laravel-tenancy.com](https://laravel-tenancy.com/) and [Voyager admin panel](https://laravelvoyager.com/) 
+both per-tenant and as a system instance.
+
+What we will get:
+
+* System Voyager instane to create tenants.
+* Per-tenant Voyager panel.
 
 A short [youtube video](https://www.youtube.com/watch?v=otQfaxCdn7I&feature=youtu.be) of what result we expect.
 
@@ -17,13 +19,18 @@ A short [youtube video](https://www.youtube.com/watch?v=otQfaxCdn7I&feature=yout
 
 ### Software needed
 
+#### Docker way
+
 * docker
 * docker-compose
 * git
 
-### System configuration
-
 Make sure you have all other dockers down and standard ports free to avoid conflicts.
+
+#### Dockerless way
+
+* An http server (apache, nging etc.) running
+* A database server (mysql, postgres) running
 
 ### Domain names
 
@@ -32,7 +39,21 @@ To work at localhost we need to have some test domains in your system.
 Let's assume our system domain will be `voyager.test` and tenant domains will be some subdomains. You can use
 non-subdomains domains for tenants as well.
 
-So you need to add the domains to your hosts file
+So you need to add the domains to your hosts file.
+
+> If you **want to use another system domain**, then replace `voyager.test` in this tutorial with your one. Especially take care of `database/seeds/HostnamesTableSeeder.php` as the system domain is imported into
+the system database `hostnames` table from this file.
+>
+> If you get troubles with your system domain Voyager, please check the
+> `hostnames` table. The system domain should be placed there withour any 
+> reference to a web-site.
+>
+> Here is an SQL snippet to manual intervention
+>
+>```sql
+> INSERT INTO "hostnames" ("id", "fqdn", "redirect_to", "force_https", "under_maintenance_since", "website_id", "created_at", "updated_at", "deleted_at") VALUES
+> (9,	'voyager.test',	NULL,	'0',	NULL,	NULL,	'2019-02-19 10:15:31',	'2019-02-19 10:15:31',	NULL);
+> ```
 
 #### Manual hosts edit
 
@@ -76,10 +97,38 @@ exit;
 
 ## Installation from scratch
 
+### Dockerless setup
+
+According tenancy [Elevated database user](https://laravel-tenancy.com/docs/hyn/5.3/installation#elevated-database-user) installation docs
+setup your database and grant privelleges to your database user so it can create per-tenant tables and table owners.
+
+The documentation uses `tenancy` database and user name. We use `default` instead. We use `secret` password.
+
+So according to the tutorial:
+
+For MariaDB or MySQL:
+
+```sql
+CREATE DATABASE IF NOT EXISTS default;
+CREATE USER IF NOT EXISTS default@localhost IDENTIFIED BY 'secret';
+GRANT ALL PRIVILEGES ON *.* TO default@localhost WITH GRANT OPTION;
+```
+
+For PostgreSQL:
+
+```sql
+CREATE DATABASE default;
+CREATE USER default WITH CREATEDB CREATEROLE PASSWORD 'secret';
+GRANT ALL PRIVILEGES ON DATABASE default to default WITH GRANT OPTION;
+```
+
 ### Docker setup
 
+> Skip, if you don't use docker.
+
 Docker will setup a database for use, so we don't need to create it manually
-or grant permissions to the database user. If you perfer to use another environment, you have to create database/user/permissions according to [tenancy installation docs](https://laravel-tenancy.com/docs/hyn/5.3/installation)
+or grant permissions to the database user. If you perfer to use another environment, you have to create database/user/permissions according to 
+tenancy [Elevated database user](https://laravel-tenancy.com/docs/hyn/5.3/installation#elevated-database-user) installation docs
 
 ```bash
 ## Create your project folder and install laradock (a docker for laravel)
@@ -115,13 +164,14 @@ docker-compose exec --user=laradock workspace bash
 
 You should see smth. like `laradock@5326c549f4cb:/var/www` in your terminal. That means you are logged in into the docker linux container. We will work next here.
 
-### In-docker workspace setup
+### Laravel Tenancy + Voyager installation and setup
 
-Whether you use linux or no, since this moment we work inside the docker container in a linux bash terminal.
+> If you use docker, since this moment we work inside the docker container in a linux bash terminal.
+>
 
-So you can just copy/paste the script below in your terminal.
+If you use Linux/docker environment you can just copy/paste the script below in your terminal.
 
-Otherwise read comments to get better understanding what is going on.
+Otherwise read comments and preform steps manually to get better understanding what is going on.
 
 **For non-linux users** 
 
@@ -140,6 +190,8 @@ should be read as:
 # 01 Create laravel project.
 # We need an intermediate tmp folder as our current folder is not
 # empty (contains laradoc folder) and laravel installation would fail otherwise
+# If you don't use docker, just install a new laravel project and
+# change directory to it
 composer create-project --prefer-dist laravel/laravel tmp
 # Enable hidden files move
 shopt -s dotglob
@@ -148,9 +200,10 @@ mv ./tmp/* .
 # Remove the temporary folder.
 rm -rf ./tmp
 
-## Update default mysql connection
+## Update default database connection
 ## Manual:
-# Edit you .env file DB connection
+# Edit you .env file DB connection like this
+# If you use mysql, adjust the corresponding settings.
 
 # DB_CONNECTION=system
 # DB_HOST=postgres
@@ -169,6 +222,7 @@ sed -i "s/DB_USERNAME=homestead/DB_USERNAME=default/g" .env
 # 02 Laravel-tenancy installation
 
 ## Change connection name to from `pgsql` to `system` in `./config/database.php`
+## If you use mysql, change connection name to from `mysql` to `system` instead
 sed -i "s/'pgsql' => \[/'system' => [/g" ./config/database.php
 
 ## Install package and configure the mulitenancy package
@@ -309,6 +363,8 @@ php artisan config:clear
 
 ## Installation from the repository
 
+### Docker
+
 ```bash
 git clone git@github.com:gruz/multi-tenancy-voyager-tries.git multi-tenancy-voyager;
 cd multi-tenancy-voyager;
@@ -332,7 +388,20 @@ docker-compose exec --user=laradock workspace bash
 
 ```
 
-Now we are inside the docker environment.
+### Dockerless
+
+```bash
+git clone git@github.com:gruz/multi-tenancy-voyager-tries.git
+```
+
+It's assumed, that you setup your HTTP server to open project `public` folder for your domain. So when you try to visit your web-site, the server tries to open the `public` folder.
+
+### Project setup
+
+If using docker, you should be logged in inside the docker environment 
+for now.
+
+Otherwise go to the project root folder.
 
 ```bash
 composer install;
