@@ -11,6 +11,8 @@ After a tenant is created, you will be able to login into a Voyager admin per te
 * Use Postgres database.
 * Install Voyager dummy data.
 
+A short [youtube video](https://www.youtube.com/watch?v=otQfaxCdn7I&feature=youtu.be) of what result we expect.
+
 ## Prerequisites
 
 ### Software needed
@@ -1327,7 +1329,7 @@ php artisan config:clear
 ## Installation from the repository
 
 ```bash
-git@github.com:gruz/multi-tenancy-voyager-tries.git multi-tenancy-voyager;
+git clone git@github.com:gruz/multi-tenancy-voyager-tries.git multi-tenancy-voyager;
 cd multi-tenancy-voyager;
 git submodule update --init --recursive;
 cd laradock;
@@ -1346,6 +1348,7 @@ sed -i "s/PHP_FPM_INSTALL_EXIF=false/PHP_FPM_INSTALL_EXIF=true/g" .env
         # Password: secret
 docker-compose up -d postgres nginx adminer
 docker-compose exec --user=laradock workspace bash
+
 ```
 
 Now we are inside the docker environment.
