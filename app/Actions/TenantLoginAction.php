@@ -43,13 +43,11 @@ class TenantLoginAction extends AbstractAction
                 'target' => '_blank'
             ];
         }
-
-
     }
 
     public function getDefaultRoute()
     {
-        $route = '//'. $this->data->fqdn . '.' . \App\Tenant::getRootFqdn()  . '/admin';
+        $route = '//'. $this->data->fqdn . '/admin';
 
         return $route;
     }

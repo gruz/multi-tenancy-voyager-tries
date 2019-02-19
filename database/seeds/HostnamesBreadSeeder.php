@@ -20,7 +20,7 @@ class HostnamesBreadSeeder extends Seeder
             'controller'            => '\App\Http\Controllers\VoyagerTenantsController',
             'generate_permissions'  => 1,
             'description'           => '',
-            'details'               => '{"order_column":null,"order_display_column":null}'
+            'details'               => null
         ];
     }
 
@@ -31,12 +31,12 @@ class HostnamesBreadSeeder extends Seeder
                 'type'         => 'number',
                 'display_name' => 'ID',
                 'required'     => 1,
-                'browse'       => 0,
-                'read'         => 0,
+                'browse'       => 1,
+                'read'         => 1,
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 1,
             ],
             'website_id' => [
@@ -48,7 +48,7 @@ class HostnamesBreadSeeder extends Seeder
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 2,
             ],
             'fqdn' => [
@@ -77,7 +77,7 @@ class HostnamesBreadSeeder extends Seeder
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 4,
             ],
             'force_https' => [
@@ -107,7 +107,7 @@ class HostnamesBreadSeeder extends Seeder
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 6,
             ],
             'created_at' => [
@@ -119,7 +119,7 @@ class HostnamesBreadSeeder extends Seeder
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 7,
             ],
             'updated_at' => [
@@ -131,7 +131,7 @@ class HostnamesBreadSeeder extends Seeder
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 8,
             ],
             'deleted_at' => [
@@ -143,7 +143,7 @@ class HostnamesBreadSeeder extends Seeder
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 9,
             ],
         ];

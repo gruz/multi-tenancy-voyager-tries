@@ -119,6 +119,19 @@ So you can just copy/paste the script below in your terminal.
 
 Otherwise read comments to get better understanding what is going on.
 
+**For non-linux users** 
+
+The following code
+```bash
+cat << 'EOF' > path/to/a/file.php
+... some contents ...
+EOF
+```
+
+should be read as:
+
+> Create(replace if exists) file `path/to/a/file.php` with content `... some contents ...`
+
 ```bash
 # 01 Create laravel project.
 # We need an intermediate tmp folder as our current folder is not
@@ -158,18 +171,17 @@ sed -i "s/'pgsql' => \[/'system' => [/g" ./config/database.php
 composer require "hyn/multi-tenant:5.3.*"
 php artisan vendor:publish --tag=tenancy
 
-
 ## Allow auto deleting tenant folders on tenant delete in `config/tenancy.php`. Optional.
 ## You should read the file carefully and realize which options it has.
 sed -i "s/'auto-delete-tenant-directory' => false/'auto-delete-tenant-directory' => true/g" ./config/tenancy.php
 
-# Edit .env file and change APP_URL to our system URL (the main web-site URL). Optional.
+# Edit .env file and change APP_URL to our system domain URL (the main web-site URL). Optional.
 # We will set the system domain respected by multitenance in our database, not in the .env file.
 SYSTEM_FQDN="voyager.test"
 APP_URL="http://"$SYSTEM_FQDN;
 sed -i "s|APP_URL=http:\/\/localhost|APP_URL=${APP_URL}|g" .env
 
-## Append to your laravel .env file with the following options. Remember
+## Append to your laravel .env file with the following options. Optional.
 echo '' >> .env
 echo '# Laravel-tenancy config' >> .env
 echo 'TENANCY_DATABASE_AUTO_DELETE=true' >> .env
@@ -192,11 +204,7 @@ php artisan migrate --database=system
 
 # 03 Add a helper class, which will do the tenant creation/deletions job
 
-# For non-linux user. The following code should be read as:
-# Create(replace if exists) file `path/to/a/file.php` with content `... some contents ...`
-# `cat << 'EOF' > path/to/a/file.php
-#  ... some contents ...
-# EOF`
+## Here is the logic of what to install per-tenant. 
 
 cat << 'EOF' > app/Tenant.php
 <?php
@@ -288,8 +296,8 @@ class Tenant
         // \Artisan::call('voyager:install');
         \Artisan::call('config:clear');
         \Artisan::call('voyager:install', ['--with-dummy' => true ]);
-        // \Artisan::call('passport:install');
-
+        //\Artisan::call('passport:install');
+        
         foreach ($files_to_preserve as $file) {
             rename($file.'.txt', $file);
         }
@@ -328,6 +336,7 @@ class Tenant
         return Hostname::where('fqdn', $name)->exists();
     }
 }
+
 EOF
 
 # 04 Voyager installation
@@ -358,17 +367,18 @@ composer require tcg/voyager
 
 # 05 Voyager setup
 
-# Add `TCG\Voyager\VoyagerServiceProvider::class` to config/app.php providers array
+# Add `TCG\Voyager\VoyagerServiceProvider::class` to config/app.php providers array. Remember, we have disabled autodiscover.
 sed -i "s/\(App\\\Providers\\\RouteServiceProvider::class,\)/\1\n        TCG\\\Voyager\\\VoyagerServiceProvider::class,/g" config/app.php
 
-# Register Voyager install command to app/Console/Kernel.php. Will be needed to create tenants via system Voyager.
+# Register Voyager install command to app/Console/Kernel.php. It will be needed to create tenants via system Voyager.
 sed -i "s/\(protected \$commands = \[\)/\1\n        \\\TCG\\\Voyager\\\Commands\\\InstallCommand::class,/g" app/Console/Kernel.php
 
-# Update your AppServiceProvider.php to switch to tenant DB and filesystem
-# when requesting a tenant URL
+# Update your AppServiceProvider.php to switch to tenant DB and filesystem when requesting a tenant URL
 cat << 'EOF' > app/Providers/AppServiceProvider.php
 <?php
+
 namespace App\Providers;
+
 use Hyn\Tenancy\Environment;
 use TCG\Voyager\Facades\Voyager;
 use App\Actions\TenantViewAction;
@@ -377,6 +387,7 @@ use App\Actions\TenantDeleteAction;
 use TCG\Voyager\Actions\ViewAction;
 use TCG\Voyager\Actions\DeleteAction;
 use Illuminate\Support\ServiceProvider;
+
 class AppServiceProvider extends ServiceProvider
 {
     /**
@@ -387,7 +398,9 @@ class AppServiceProvider extends ServiceProvider
     public function boot()
     {
         $env = app(Environment::class);
+
         $isSystem = true; 
+
         if ($fqdn = optional($env->hostname())->fqdn) {
             if (\App\Tenant::getRootFqdn() !== $fqdn ) {
                 config(['database.default' => 'tenant']);
@@ -395,6 +408,7 @@ class AppServiceProvider extends ServiceProvider
                 $isSystem = false; 
             }
         }
+
         if ($isSystem) {
             Voyager::addAction(TenantLoginAction::class);
             Voyager::replaceAction(ViewAction::class, TenantViewAction::class);
@@ -402,6 +416,7 @@ class AppServiceProvider extends ServiceProvider
         }
         //
     }
+
     /**
      * Register any application services.
      *
@@ -412,6 +427,7 @@ class AppServiceProvider extends ServiceProvider
         //
     }
 }
+
 EOF
 
 # Override Hyn Laravel tenanty Mediacontroller to make it work with Voyager.
@@ -420,9 +436,12 @@ EOF
 # So we create our own controller.
 cat << 'EOF' > app/Http/Controllers/HynOverrideMediaController.php
 <?php
+
 namespace App\Http\Controllers;
+
 use Hyn\Tenancy\Website\Directory;
 use Illuminate\Support\Facades\Storage;
+
 /**
  * Class MediaController
  *
@@ -436,30 +455,35 @@ class HynOverrideMediaController extends \Hyn\Tenancy\Controllers\MediaControlle
      * @var Directory
      */
     private $directory;
+
     public function __construct(Directory $directory)
     {
         $this->directory = $directory;
     }
+
     public function __invoke(string $path)
     {
         // $path = "media/$path";
+
         if ($this->directory->exists($path)) {
             return response($this->directory->get($path))
                 ->header('Content-Type', Storage::disk('tenant')->mimeType($path));
         }
+
         return abort(404);
     }
 }
+
 EOF
 
-# And set all paths requesting uploaded files to use just created controller.
+# Set all paths requesting uploaded files to use just created controller.
 cat << 'EOF' >> routes/web.php
 Route::get('/storage/{path}', '\App\Http\Controllers\HynOverrideMediaController')
     ->where('path', '.+')
     ->name('tenant.media');
 EOF
 
-# Create a model for system Voyager
+# Create Hostname model for system Voyager
 php artisan make:model Hostname
 
 # Create a system domain seeder and run it
@@ -491,18 +515,22 @@ class HostnamesTableSeeder extends Seeder
         }
     }
 }
+
 EOF
+
 composer dump-autoload
 php artisan db:seed --class=HostnamesTableSeeder
 
-# Finally install system voyager with dummy data. We need dummy data to have some fallback data for tenants, 
+# Install system voyager with dummy data. We need dummy data to have some fallback data for tenants,
 # if they use dummy as well.
 php artisan voyager:install --with-dummy
 
 # Create a controller for the system Voyager to manage tenants
 cat << 'EOF' > app/Http/Controllers/VoyagerTenantsController.php
 <?php
+
 namespace App\Http\Controllers;
+
 use App\Tenant;
 use Hyn\Tenancy\Environment;
 use Illuminate\Http\Request;
@@ -511,6 +539,8 @@ use TCG\Voyager\Facades\Voyager;
 use Illuminate\Support\Facades\DB;
 use TCG\Voyager\Events\BreadDataAdded;
 use TCG\Voyager\Events\BreadDataDeleted;
+
+
 class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBaseController
 {
     /**
@@ -522,13 +552,17 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
      */
     private function isTenantOperation(Request $request) {
         $slug = $this->getSlug($request);
+
         $env = app(Environment::class);
         $fqdn = optional($env->hostname())->fqdn;
+
         if (\App\Tenant::getRootFqdn() !== $fqdn || 'hostnames' !== $slug) {
             return false;
         }
+
         return true;
     }
+
     /**
      * POST BRE(A)D - Store data.
      *
@@ -541,25 +575,39 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
         if (!$this->isTenantOperation($request)) {
             return parent::store($request);
         }
+
         $fqdn = $request->get('fqdn') . '.' . \App\Tenant::getRootFqdn();
         $request->offsetSet('fqdn', $fqdn);
+
+
         $slug = $this->getSlug($request);
+
         $dataType = Voyager::model('DataType')->where('slug', '=', $slug)->first();
+
         // Check permission
         $this->authorize('add', app($dataType->model_name));
+
         // Validate fields with ajax
         $val = $this->validateBread($request->all(), $dataType->addRows);
+
         if ($val->fails()) {
             return response()->json(['errors' => $val->messages()]);
         }
+
         if (!$request->has('_validate')) {
+
             $tenant = Tenant::registerTenant($fqdn);
+
             $data = Hostname::where('fqdn', $fqdn)->firstOrFail(); 
+
             // $data = $this->insertUpdateData($request, $slug, $dataType->addRows, new $dataType->model_name());
+
             event(new BreadDataAdded($dataType, $data));
+
             if ($request->ajax()) {
                 return response()->json(['success' => true, 'data' => $data]);
             }
+
             return redirect()
                 ->route("voyager.{$dataType->slug}.index")
                 ->with([
@@ -568,6 +616,7 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
                     ]);
         }
     }
+
     //***************************************
     //                _____
     //               |  __ \
@@ -579,15 +628,20 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
     //         Delete an item BREA(D)
     //
     //****************************************
+
     public function destroy(Request $request, $id)
     {
         if (!$this->isTenantOperation($request)) {
             return parent::destroy($request);
         }
+
         $slug = $this->getSlug($request);
+
         $dataType = Voyager::model('DataType')->where('slug', '=', $slug)->first();
+
         $fqdn = Hostname::where('id', $id)->firstOrFail(['fqdn'])->fqdn; 
         $systemSite = \App\Tenant::getRootFqdn();
+
         if ( $systemSite === $fqdn ) {
             return redirect()
                 ->route("voyager.{$dataType->slug}.index")
@@ -596,8 +650,10 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
                         'alert-type' => 'error',
                     ]);
         }
+
         // Check permission
         $this->authorize('delete', app($dataType->model_name));
+
         // Init array of IDs
         $ids = [];
         if (empty($id)) {
@@ -607,13 +663,16 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
             // Single item delete, get ID from URL
             $ids[] = $id;
         }
+
         $res = false;
         foreach ($ids as $id) {
             $data = call_user_func([$dataType->model_name, 'findOrFail'], $id, $columns = array('fqdn') );
             $this->cleanup($dataType, $data);
             $res = Tenant::deleteById($id);
         }
+
         $displayName = count($ids) > 1 ? $dataType->display_name_plural : $dataType->display_name_singular;
+
         // TODO ##mygruz20190213014253 
         // If deleting several domains, we can get partial successfull result. We must properly handle the situations.
         // Currently if we have at least one (or last) success, we return a success message.
@@ -626,15 +685,43 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
                 'message'    => __('voyager::generic.error_deleting')." {$displayName}",
                 'alert-type' => 'error',
             ];
+
         if ($res) {
             event(new BreadDataDeleted($dataType, $data));
         }
+
         return redirect()->route("voyager.{$dataType->slug}.index")->with($data);
     }
+
+    // POST BR(E)AD
+    public function update(Request $request, $id)
+    {
+        if (!$this->isTenantOperation($request)) {
+            return parent::update($request, $id);
+        }
+        
+
+        $systemSiteId = Hostname::where('website_id', null)->first()->id;
+        $systemSite = \App\Tenant::getRootFqdn();
+
+        if ( $systemSiteId === intval($id) ) {
+
+            parent::update($request, $id);
+
+            return redirect()->to('//' . $request->fqdn  . '/admin/');
+        } else {
+            return parent::update($request, $id);
+        }
+    }
+
+
 }
+
 EOF
 
 # Create Bread for hostnames in system Voyager
+composer require --dev gruz/voyager-bread-generator
+
 cat << 'EOF' > database/seeds/HostnamesBreadSeeder.php
 <?php
 
@@ -658,7 +745,7 @@ class HostnamesBreadSeeder extends Seeder
             'controller'            => '\App\Http\Controllers\VoyagerTenantsController',
             'generate_permissions'  => 1,
             'description'           => '',
-            'details'               => '{"order_column":null,"order_display_column":null}'
+            'details'               => null
         ];
     }
 
@@ -669,12 +756,12 @@ class HostnamesBreadSeeder extends Seeder
                 'type'         => 'number',
                 'display_name' => 'ID',
                 'required'     => 1,
-                'browse'       => 0,
-                'read'         => 0,
+                'browse'       => 1,
+                'read'         => 1,
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 1,
             ],
             'website_id' => [
@@ -686,7 +773,7 @@ class HostnamesBreadSeeder extends Seeder
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 2,
             ],
             'fqdn' => [
@@ -715,7 +802,7 @@ class HostnamesBreadSeeder extends Seeder
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 4,
             ],
             'force_https' => [
@@ -745,7 +832,7 @@ class HostnamesBreadSeeder extends Seeder
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 6,
             ],
             'created_at' => [
@@ -757,7 +844,7 @@ class HostnamesBreadSeeder extends Seeder
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 7,
             ],
             'updated_at' => [
@@ -769,7 +856,7 @@ class HostnamesBreadSeeder extends Seeder
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 8,
             ],
             'deleted_at' => [
@@ -781,7 +868,7 @@ class HostnamesBreadSeeder extends Seeder
                 'edit'         => 0,
                 'add'          => 0,
                 'delete'       => 0,
-                'details'      => '',
+                'details'      => new stdClass,
                 'order'        => 9,
             ],
         ];
@@ -804,6 +891,7 @@ class HostnamesBreadSeeder extends Seeder
         ];
     }
 }
+
 EOF
 
 composer dump-autoload
@@ -837,7 +925,9 @@ class TenantDeleteAction extends DeleteAction
         }
     }
 }
+
 EOF
+
 cat << 'EOF' > app/Actions/TenantLoginAction.php
 <?php
 
@@ -884,18 +974,18 @@ class TenantLoginAction extends AbstractAction
                 'target' => '_blank'
             ];
         }
-
-
     }
 
     public function getDefaultRoute()
     {
-        $route = '//'. $this->data->fqdn . '.' . \App\Tenant::getRootFqdn()  . '/admin';
+        $route = '//'. $this->data->fqdn . '/admin';
 
         return $route;
     }
 }
+
 EOF
+
 cat << 'EOF' > app/Actions/TenantViewAction.php
 <?php
 
@@ -929,6 +1019,303 @@ class TenantViewAction extends ViewAction
         return $route;
     }
 }
+
+EOF
+
+# Override a Voyager template to show 'System domain' text for a system domain in system Voyager
+
+mkdir -p resources/views/vendor/voyager/hostnames
+
+cat << 'EOF' > resources/views/vendor/voyager/hostnames/browse.blade.php
+@extends('voyager::master')
+
+@section('page_title', __('voyager::generic.viewing').' '.$dataType->display_name_plural)
+
+@section('page_header')
+    <div class="container-fluid">
+        <h1 class="page-title">
+            <i class="{{ $dataType->icon }}"></i> {{ $dataType->display_name_plural }}
+        </h1>
+        @can('add', app($dataType->model_name))
+            <a href="{{ route('voyager.'.$dataType->slug.'.create') }}" class="btn btn-success btn-add-new">
+                <i class="voyager-plus"></i> <span>{{ __('voyager::generic.add_new') }}</span>
+            </a>
+        @endcan
+        @can('delete', app($dataType->model_name))
+            @include('voyager::partials.bulk-delete')
+        @endcan
+        @can('edit', app($dataType->model_name))
+            @if(isset($dataType->order_column) && isset($dataType->order_display_column))
+                <a href="{{ route('voyager.'.$dataType->slug.'.order') }}" class="btn btn-primary">
+                    <i class="voyager-list"></i> <span>{{ __('voyager::bread.order') }}</span>
+                </a>
+            @endif
+        @endcan
+        @include('voyager::multilingual.language-selector')
+    </div>
+@stop
+
+@section('content')
+    <div class="page-content browse container-fluid">
+        @include('voyager::alerts')
+        <div class="row">
+            <div class="col-md-12">
+                <div class="panel panel-bordered">
+                    <div class="panel-body">
+                        @if ($isServerSide)
+                            <form method="get" class="form-search">
+                                <div id="search-input">
+                                    <select id="search_key" name="key">
+                                        @foreach($searchable as $key)
+                                            <option value="{{ $key }}" @if($search->key == $key || $key == $defaultSearchKey){{ 'selected' }}@endif>{{ ucwords(str_replace('_', ' ', $key)) }}</option>
+                                        @endforeach
+                                    </select>
+                                    <select id="filter" name="filter">
+                                        <option value="contains" @if($search->filter == "contains"){{ 'selected' }}@endif>contains</option>
+                                        <option value="equals" @if($search->filter == "equals"){{ 'selected' }}@endif>=</option>
+                                    </select>
+                                    <div class="input-group col-md-12">
+                                        <input type="text" class="form-control" placeholder="{{ __('voyager::generic.search') }}" name="s" value="{{ $search->value }}">
+                                        <span class="input-group-btn">
+                                            <button class="btn btn-info btn-lg" type="submit">
+                                                <i class="voyager-search"></i>
+                                            </button>
+                                        </span>
+                                    </div>
+                                </div>
+                            </form>
+                        @endif
+                        <div class="table-responsive">
+                            <table id="dataTable" class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        @can('delete',app($dataType->model_name))
+                                            <th>
+                                                <input type="checkbox" class="select_all">
+                                            </th>
+                                        @endcan
+                                        @foreach($dataType->browseRows as $row)
+                                        <th>
+                                            @if ($isServerSide)
+                                                <a href="{{ $row->sortByUrl($orderBy, $sortOrder) }}">
+                                            @endif
+                                            {{ $row->display_name }}
+                                            @if ($isServerSide)
+                                                @if ($row->isCurrentSortField($orderBy))
+                                                    @if ($sortOrder == 'asc')
+                                                        <i class="voyager-angle-up pull-right"></i>
+                                                    @else
+                                                        <i class="voyager-angle-down pull-right"></i>
+                                                    @endif
+                                                @endif
+                                                </a>
+                                            @endif
+                                        </th>
+                                        @endforeach
+                                        <th class="actions text-right">{{ __('voyager::generic.actions') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($dataTypeContent as $data)
+                                    <tr>
+                                        @can('delete',app($dataType->model_name))
+                                            <td>
+                                                <input type="checkbox" name="row_id" id="checkbox_{{ $data->getKey() }}" value="{{ $data->getKey() }}">
+                                            </td>
+                                        @endcan
+                                        @foreach($dataType->browseRows as $row)
+
+                                            @if($row->field == 'website_id' && empty($data->website_id))
+                                                <?php
+                                                $data->website_id = 'System domain';
+                                                ?>
+                                            @endif
+                                            <td>
+                                                @if($row->type == 'image')
+                                                    <img src="@if( !filter_var($data->{$row->field}, FILTER_VALIDATE_URL)){{ Voyager::image( $data->{$row->field} ) }}@else{{ $data->{$row->field} }}@endif" style="width:100px">
+                                                @elseif($row->type == 'relationship')
+                                                    @include('voyager::formfields.relationship', ['view' => 'browse','options' => $row->details])
+                                                @elseif($row->type == 'select_multiple')
+                                                    @if(property_exists($row->details, 'relationship'))
+
+                                                        @foreach($data->{$row->field} as $item)
+                                                            {{ $item->{$row->field} }}
+                                                        @endforeach
+
+                                                    @elseif(property_exists($row->details, 'options'))
+                                                        @if (count(json_decode($data->{$row->field})) > 0)
+                                                            @foreach(json_decode($data->{$row->field}) as $item)
+                                                                @if (@$row->details->options->{$item})
+                                                                    {{ $row->details->options->{$item} . (!$loop->last ? ', ' : '') }}
+                                                                @endif
+                                                            @endforeach
+                                                        @else
+                                                            {{ __('voyager::generic.none') }}
+                                                        @endif
+                                                    @endif
+
+                                                @elseif($row->type == 'select_dropdown' && property_exists($row->details, 'options'))
+
+                                                    {!! isset($row->details->options->{$data->{$row->field}}) ?  $row->details->options->{$data->{$row->field}} : '' !!}
+
+                                                @elseif($row->type == 'date' || $row->type == 'timestamp')
+                                                    {{ property_exists($row->details, 'format') ? \Carbon\Carbon::parse($data->{$row->field})->formatLocalized($row->details->format) : $data->{$row->field} }}
+                                                @elseif($row->type == 'checkbox')
+                                                    @if(property_exists($row->details, 'on') && property_exists($row->details, 'off'))
+                                                        @if($data->{$row->field})
+                                                            <span class="label label-info">{{ $row->details->on }}</span>
+                                                        @else
+                                                            <span class="label label-primary">{{ $row->details->off }}</span>
+                                                        @endif
+                                                    @else
+                                                    {{ $data->{$row->field} }}
+                                                    @endif
+                                                @elseif($row->type == 'color')
+                                                    <span class="badge badge-lg" style="background-color: {{ $data->{$row->field} }}">{{ $data->{$row->field} }}</span>
+                                                @elseif($row->type == 'text')
+                                                    @include('voyager::multilingual.input-hidden-bread-browse')
+                                                    <div class="readmore">{{ mb_strlen( $data->{$row->field} ) > 200 ? mb_substr($data->{$row->field}, 0, 200) . ' ...' : $data->{$row->field} }}</div>
+                                                @elseif($row->type == 'text_area')
+                                                    @include('voyager::multilingual.input-hidden-bread-browse')
+                                                    <div class="readmore">{{ mb_strlen( $data->{$row->field} ) > 200 ? mb_substr($data->{$row->field}, 0, 200) . ' ...' : $data->{$row->field} }}</div>
+                                                @elseif($row->type == 'file' && !empty($data->{$row->field}) )
+                                                    @include('voyager::multilingual.input-hidden-bread-browse')
+                                                    @if(json_decode($data->{$row->field}))
+                                                        @foreach(json_decode($data->{$row->field}) as $file)
+                                                            <a href="{{ Storage::disk(config('voyager.storage.disk'))->url($file->download_link) ?: '' }}" target="_blank">
+                                                                {{ $file->original_name ?: '' }}
+                                                            </a>
+                                                            <br/>
+                                                        @endforeach
+                                                    @else
+                                                        <a href="{{ Storage::disk(config('voyager.storage.disk'))->url($data->{$row->field}) }}" target="_blank">
+                                                            Download
+                                                        </a>
+                                                    @endif
+                                                @elseif($row->type == 'rich_text_box')
+                                                    @include('voyager::multilingual.input-hidden-bread-browse')
+                                                    <div class="readmore">{{ mb_strlen( strip_tags($data->{$row->field}, '<b><i><u>') ) > 200 ? mb_substr(strip_tags($data->{$row->field}, '<b><i><u>'), 0, 200) . ' ...' : strip_tags($data->{$row->field}, '<b><i><u>') }}</div>
+                                                @elseif($row->type == 'coordinates')
+                                                    @include('voyager::partials.coordinates-static-image')
+                                                @elseif($row->type == 'multiple_images')
+                                                    @php $images = json_decode($data->{$row->field}); @endphp
+                                                    @if($images)
+                                                        @php $images = array_slice($images, 0, 3); @endphp
+                                                        @foreach($images as $image)
+                                                            <img src="@if( !filter_var($image, FILTER_VALIDATE_URL)){{ Voyager::image( $image ) }}@else{{ $image }}@endif" style="width:50px">
+                                                        @endforeach
+                                                    @endif
+                                                @else
+                                                    @include('voyager::multilingual.input-hidden-bread-browse')
+                                                    <span>{{ $data->{$row->field} }}</span>
+                                                @endif
+                                            </td>
+                                        @endforeach
+                                        <td class="no-sort no-click" id="bread-actions">
+                                            @foreach(Voyager::actions() as $action)
+                                                @include('voyager::bread.partials.actions', ['action' => $action])
+                                            @endforeach
+                                        </td>
+                                    </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                        @if ($isServerSide)
+                            <div class="pull-left">
+                                <div role="status" class="show-res" aria-live="polite">{{ trans_choice(
+                                    'voyager::generic.showing_entries', $dataTypeContent->total(), [
+                                        'from' => $dataTypeContent->firstItem(),
+                                        'to' => $dataTypeContent->lastItem(),
+                                        'all' => $dataTypeContent->total()
+                                    ]) }}</div>
+                            </div>
+                            <div class="pull-right">
+                                {{ $dataTypeContent->appends([
+                                    's' => $search->value,
+                                    'filter' => $search->filter,
+                                    'key' => $search->key,
+                                    'order_by' => $orderBy,
+                                    'sort_order' => $sortOrder
+                                ])->links() }}
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Single delete modal --}}
+    <div class="modal modal-danger fade" tabindex="-1" id="delete_modal" role="dialog">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="{{ __('voyager::generic.close') }}"><span aria-hidden="true">&times;</span></button>
+                    <h4 class="modal-title"><i class="voyager-trash"></i> {{ __('voyager::generic.delete_question') }} {{ strtolower($dataType->display_name_singular) }}?</h4>
+                </div>
+                <div class="modal-footer">
+                    <form action="#" id="delete_form" method="POST">
+                        {{ method_field('DELETE') }}
+                        {{ csrf_field() }}
+                        <input type="submit" class="btn btn-danger pull-right delete-confirm" value="{{ __('voyager::generic.delete_confirm') }}">
+                    </form>
+                    <button type="button" class="btn btn-default pull-right" data-dismiss="modal">{{ __('voyager::generic.cancel') }}</button>
+                </div>
+            </div><!-- /.modal-content -->
+        </div><!-- /.modal-dialog -->
+    </div><!-- /.modal -->
+@stop
+
+@section('css')
+@if(!$dataType->server_side && config('dashboard.data_tables.responsive'))
+    <link rel="stylesheet" href="{{ voyager_asset('lib/css/responsive.dataTables.min.css') }}">
+@endif
+@stop
+
+@section('javascript')
+    <!-- DataTables -->
+    @if(!$dataType->server_side && config('dashboard.data_tables.responsive'))
+        <script src="{{ voyager_asset('lib/js/dataTables.responsive.min.js') }}"></script>
+    @endif
+    <script>
+        $(document).ready(function () {
+            @if (!$dataType->server_side)
+                var table = $('#dataTable').DataTable({!! json_encode(
+                    array_merge([
+                        "order" => $orderColumn,
+                        "language" => __('voyager::datatable'),
+                        "columnDefs" => [['targets' => -1, 'searchable' =>  false, 'orderable' => false]],
+                    ],
+                    config('voyager.dashboard.data_tables', []))
+                , true) !!});
+            @else
+                $('#search-input select').select2({
+                    minimumResultsForSearch: Infinity
+                });
+            @endif
+
+            @if ($isModelTranslatable)
+                $('.side-body').multilingual();
+                //Reinitialise the multilingual features when they change tab
+                $('#dataTable').on('draw.dt', function(){
+                    $('.side-body').data('multilingual').init();
+                })
+            @endif
+            $('.select_all').on('click', function(e) {
+                $('input[name="row_id"]').prop('checked', $(this).prop('checked'));
+            });
+        });
+
+
+        var deleteFormAction;
+        $('td').on('click', '.delete', function (e) {
+            $('#delete_form')[0].action = '{{ route('voyager.'.$dataType->slug.'.destroy', ['id' => '__id']) }}'.replace('__id', $(this).data('id'));
+            $('#delete_modal').modal('show');
+        });
+    </script>
+@stop
+
 EOF
 
 php artisan config:clear
@@ -939,11 +1326,11 @@ php artisan config:clear
 
 Open [http://voyager.test/admin](http://voyager.test/admin) and login with `admin@admin.com`/`password`
 
-Go to `Hostnames` sidebar menu and create a tenant like `dnipro.voyager.test` or `kyiv.voyager.test`. 
+Go to `Hostnames` sidebar menu and create a tenant like `dnipro.voyager.test` or `kyiv.voyager.test`.
 Remember editing `hosts` file at the tutorial begining.
 
-Open newly created [http://dnipro.voyager.test/admin](http://dnipro.voyager.test/admin) 
-in your browser and login using credentials `admin@admin.com`/`password`. 
+Open newly created [http://dnipro.voyager.test/admin](http://dnipro.voyager.test/admin)
+in your browser and login using credentials `admin@admin.com`/`password`.
 
 Try editing data and uploading files to different tenants to be sure the data is different per tenant.
 

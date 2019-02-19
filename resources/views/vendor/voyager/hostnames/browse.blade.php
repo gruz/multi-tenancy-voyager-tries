@@ -96,6 +96,11 @@
                                         @endcan
                                         @foreach($dataType->browseRows as $row)
 
+                                            @if($row->field == 'website_id' && empty($data->website_id))
+                                                <?php
+                                                $data->website_id = 'System domain';
+                                                ?>
+                                            @endif
                                             <td>
                                                 @if($row->type == 'image')
                                                     <img src="@if( !filter_var($data->{$row->field}, FILTER_VALIDATE_URL)){{ Voyager::image( $data->{$row->field} ) }}@else{{ $data->{$row->field} }}@endif" style="width:100px">
@@ -140,12 +145,6 @@
                                                     <span class="badge badge-lg" style="background-color: {{ $data->{$row->field} }}">{{ $data->{$row->field} }}</span>
                                                 @elseif($row->type == 'text')
                                                     @include('voyager::multilingual.input-hidden-bread-browse')
-                                                    @if($row->field == 'fqdn')
-                                                        <?php 
-                                                        $systemSite = \App\Tenant::getRootFqdn();
-                                                        $data->fqdn = preg_replace('/(.*)(\.' . $systemSite . '$)/', '$1', $data->fqdn);
-                                                        ?>
-                                                    @endif
                                                     <div class="readmore">{{ mb_strlen( $data->{$row->field} ) > 200 ? mb_substr($data->{$row->field}, 0, 200) . ' ...' : $data->{$row->field} }}</div>
                                                 @elseif($row->type == 'text_area')
                                                     @include('voyager::multilingual.input-hidden-bread-browse')

@@ -170,121 +170,20 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
         if (!$this->isTenantOperation($request)) {
             return parent::update($request, $id);
         }
+        
 
         $systemSiteId = Hostname::where('website_id', null)->first()->id;
         $systemSite = \App\Tenant::getRootFqdn();
 
         if ( $systemSiteId === intval($id) ) {
 
-            $slug = $this->getSlug($request);
+            parent::update($request, $id);
 
-            $dataType = Voyager::model('DataType')->where('slug', '=', $slug)->first();
-    
-            // Compatibility with Model binding.
-            $id = $id instanceof Model ? $id->{$id->getKeyName()} : $id;
-    
-            $data = call_user_func([$dataType->model_name, 'findOrFail'], $id);
-    
-            // Check permission
-            $this->authorize('edit', $data);
-    
-            // Validate fields with ajax
-            $val = $this->validateBread($request->all(), $dataType->editRows, $dataType->name, $id);
-    
-            if ($val->fails()) {
-                return response()->json(['errors' => $val->messages()]);
-            }
-
-            if (!$request->ajax()) {
-                $newSystemSite = $request->fqdn;
-                $hostnames = Hostname::where('website_id', '<>', null)->get();
-
-                DB::beginTransaction();
-                // do all your updates here
-        
-                foreach ($hostnames as $hostname) {
-                    $newFqdn = preg_replace('/(.*)(\.' . $systemSite . '$)/', '$1.' . $newSystemSite, $hostname->fqdn);
-        
-                    DB::table('hostnames')
-                            ->where('id', '=', $hostname->id)
-                            ->update([
-                                'fqdn' => $newFqdn  // update your field(s) here
-                            ]);
-                }
-                // when done commit
-                DB::commit();
-
-                parent::update($request, $id);
-
-                $slug = $this->getSlug($request);
-
-                $dataType = Voyager::model('DataType')->where('slug', '=', $slug)->first();
-
-                return redirect()
-                    ->to('//' . $newSystemSite  . '/admin/');
-            }
-
+            return redirect()->to('//' . $request->fqdn  . '/admin/');
         } else {
-            $fqdn = $request->get('fqdn') . '.' . \App\Tenant::getRootFqdn();
-            $request->offsetSet('fqdn', $fqdn);
-    
             return parent::update($request, $id);
         }
     }
 
-
-    //***************************************
-    //                _____
-    //               |  __ \
-    //               | |__) |
-    //               |  _  /
-    //               | | \ \
-    //               |_|  \_\
-    //
-    //  Read an item of our Data Type B(R)EAD
-    //
-    //****************************************
-    
-    public function show(Request $request, $id)
-    {
-        if (!$this->isTenantOperation($request)) {
-            return parent::show($request, $id);
-        }
-
-        $slug = $this->getSlug($request);
-
-        $dataType = Voyager::model('DataType')->where('slug', '=', $slug)->first();
-
-        if (strlen($dataType->model_name) != 0) {
-            $model = app($dataType->model_name);
-            $dataTypeContent = call_user_func([$model, 'findOrFail'], $id);
-        } else {
-            // If Model doest exist, get data from table name
-            $dataTypeContent = DB::table($dataType->name)->where('id', $id)->first();
-        }
-
-        // Replace relationships' keys for labels and create READ links if a slug is provided.
-        $dataTypeContent = $this->resolveRelations($dataTypeContent, $dataType, true);
-        
-        $systemSite = \App\Tenant::getRootFqdn();
-        $dataTypeContent->fqdn = preg_replace('/(.*)(\.' . $systemSite . '$)/', '$1', $dataTypeContent->fqdn);
-
-        // If a column has a relationship associated with it, we do not want to show that field
-        $this->removeRelationshipField($dataType, 'read');
-
-        // Check permission
-        $this->authorize('read', $dataTypeContent);
-
-        // Check if BREAD is Translatable
-        $isModelTranslatable = is_bread_translatable($dataTypeContent);
-
-        $view = 'voyager::bread.read';
-
-        if (view()->exists("voyager::$slug.read")) {
-            $view = "voyager::$slug.read";
-        }
-
-        return Voyager::view($view, compact('dataType', 'dataTypeContent', 'isModelTranslatable'));
-    }
 
 }

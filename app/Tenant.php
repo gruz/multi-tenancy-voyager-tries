@@ -87,7 +87,7 @@ class Tenant
         // \Artisan::call('voyager:install');
         \Artisan::call('config:clear');
         \Artisan::call('voyager:install', ['--with-dummy' => true ]);
-        \Artisan::call('passport:install');
+        //\Artisan::call('passport:install');
         
         foreach ($files_to_preserve as $file) {
             rename($file.'.txt', $file);
@@ -127,4 +127,3 @@ class Tenant
         return Hostname::where('fqdn', $name)->exists();
     }
 }
-
