@@ -47,7 +47,7 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
             return parent::store($request);
         }
 
-        $fqdn = $request->get('fqdn') . '.' . \App\Tenant::getRootFqdn();
+        $fqdn = $request->get('fqdn');
         $request->offsetSet('fqdn', $fqdn);
 
 

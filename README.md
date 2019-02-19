@@ -132,6 +132,8 @@ should be read as:
 
 > Create(replace if exists) file `path/to/a/file.php` with content `... some contents ...`
 
+#### Bash script
+
 ```bash
 # 01 Create laravel project.
 # We need an intermediate tmp folder as our current folder is not
