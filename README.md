@@ -1,5 +1,10 @@
 # Laravel Multitenant + Voyager installation guide
 
+> The tutorial is written for Postgres DB. For MySQL you'll need also
+> 
+> * Add to your project `.env` line `LIMIT_UUID_LENGTH_32=true`
+> * Override DefaultPasswordGenerator class of voyager. MySQL was looking for a hard password which have special char also in it. Voyager use MD5 which just have a-z and 0-9
+
 ## Intro
 
 What we will:
