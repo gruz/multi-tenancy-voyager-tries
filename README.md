@@ -189,7 +189,6 @@ should be read as:
 ```bash
 # Set which database you use - Postgres of MySQL
 DATABASE_TYPE=Postgres
-USE_DOCKER=true
 
 # 01 Create laravel project.
 # We need an intermediate tmp folder as our current folder is not
@@ -225,6 +224,7 @@ rm -rf ./tmp
 # DB_DATABASE=default
 # DB_USERNAME=default
 # DB_PASSWORD=secret
+# LIMIT_UUID_LENGTH_32=true
 
 ## Script way
 if [ "$DATABASE_TYPE" == "Postgres" ]; then

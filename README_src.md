@@ -224,6 +224,7 @@ rm -rf ./tmp
 # DB_DATABASE=default
 # DB_USERNAME=default
 # DB_PASSWORD=secret
+# LIMIT_UUID_LENGTH_32=true
 
 ## Script way
 if [ "$DATABASE_TYPE" == "Postgres" ]; then
