@@ -187,6 +187,9 @@ should be read as:
 > Create(replace if exists) file `path/to/a/file.php` with content `... some contents ...`
 
 ```bash
+# Set which database you use - Postgres of MySQL
+DATABASE_TYPE=Postgres
+
 # 01 Create laravel project.
 # We need an intermediate tmp folder as our current folder is not
 # empty (contains laradoc folder) and laravel installation would fail otherwise
@@ -201,10 +204,12 @@ mv ./tmp/* .
 rm -rf ./tmp
 
 ## Update default database connection
+
 ## Manual:
 # Edit you .env file DB connection like this
-# If you use mysql, adjust the corresponding settings.
+# NOTE! DB_HOST may differs for different server configurations. Usual values are `localhost`, `127.0.0.1`
 
+# Postgres
 # DB_CONNECTION=system
 # DB_HOST=postgres
 # DB_PORT=5432
@@ -212,18 +217,45 @@ rm -rf ./tmp
 # DB_USERNAME=default
 # DB_PASSWORD=secret
 
+# Mysql
+# DB_CONNECTION=system
+# DB_HOST=mysql
+# DB_PORT=3306
+# DB_DATABASE=default
+# DB_USERNAME=default
+# DB_PASSWORD=secret
+
 ## Script way
-sed -i "s/DB_CONNECTION=mysql/DB_CONNECTION=system/g" .env
-sed -i "s/DB_HOST=127\.0\.0\.1/DB_HOST=postgres/g" .env
-sed -i "s/DB_PORT=3306/DB_PORT=5432/g" .env
-sed -i "s/DB_DATABASE=homestead/DB_DATABASE=default/g" .env
-sed -i "s/DB_USERNAME=homestead/DB_USERNAME=default/g" .env
+if [ "$DATABASE_TYPE" == "Postgres" ]; then
+    sed -i "s/DB_CONNECTION=mysql/DB_CONNECTION=system/g" .env
+    sed -i "s/DB_HOST=127\.0\.0\.1/DB_HOST=postgres/g" .env
+    sed -i "s/DB_PORT=3306/DB_PORT=5432/g" .env
+    sed -i "s/DB_DATABASE=homestead/DB_DATABASE=default/g" .env
+    sed -i "s/DB_USERNAME=homestead/DB_USERNAME=default/g" .env
+else
+    sed -i "s/DB_CONNECTION=mysql/DB_CONNECTION=system/g" .env
+    sed -i "s/DB_HOST=127\.0\.0\.1/DB_HOST=mysql/g" .env
+    echo '' >> .env
+    echo '# Mysql additional setup' >> .env
+    echo 'LIMIT_UUID_LENGTH_32=true' >> .env
+    echo '' >> .env
+fi
 
 # 02 Laravel-tenancy installation
 
 ## Change connection name to from `pgsql` to `system` in `./config/database.php`
 ## If you use mysql, change connection name to from `mysql` to `system` instead
-sed -i "s/'pgsql' => \[/'system' => [/g" ./config/database.php
+
+if [ "$DATABASE_TYPE" == "Postgres" ]; then
+    sed -i "s/'pgsql' => \[/'system' => [/g" ./config/database.php
+else
+    sed -i "s/'mysql' => \[/'system' => [/g" ./config/database.php
+    ## Override DefaultPasswordGenerator class of voyager. 
+    ## MySQL was looking for a hard password which have special char also in it. 
+    ## Voyager use MD5 which just have a-z and 0-9.
+@@file : app/DatabasePasswordGenerator.php
+    sed -i "s/'password-generator' => Hyn\\\Tenancy\\\Generators\\\Database\\\DefaultPasswordGenerator::class,/'password-generator' => App\\\DatabasePasswordGenerator::class,/g" ./config/tenancy.php
+fi
 
 ## Install package and configure the mulitenancy package
 composer require "hyn/multi-tenant:5.3.*"

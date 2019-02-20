@@ -1,20 +1,5 @@
 # Laravel Multitenant + Voyager installation guide
 
-> The tutorial is written for Postgres DB. For MySQL you'll need also
-> 
-> * Add to your project `.env` line `LIMIT_UUID_LENGTH_32=true`
-> * Override DefaultPasswordGenerator class of voyager. MySQL was looking for a hard password which have special char also in it. Voyager use MD5 which just have a-z and 0-9.
-> * Update 'password-generator' in `config/tenancy.php` to have your own password generatore class like: `'password-generator' => App\DatabasePasswordGenerator::class`
-> * .env file will have need DB connection for MySQL as well:
->```bash
->DB_CONNECTION=system
->DB_HOST=127.0.0.1
->DB_PORT=3306
->DB_DATABASE=default
->DB_USERNAME=default
->DB_PASSWORD=secret
->```
-
 ## Intro
 
 What we will:
@@ -202,6 +187,10 @@ should be read as:
 > Create(replace if exists) file `path/to/a/file.php` with content `... some contents ...`
 
 ```bash
+# Set which database you use - Postgres of MySQL
+DATABASE_TYPE=Postgres
+USE_DOCKER=true
+
 # 01 Create laravel project.
 # We need an intermediate tmp folder as our current folder is not
 # empty (contains laradoc folder) and laravel installation would fail otherwise
@@ -216,10 +205,12 @@ mv ./tmp/* .
 rm -rf ./tmp
 
 ## Update default database connection
+
 ## Manual:
 # Edit you .env file DB connection like this
-# If you use mysql, adjust the corresponding settings.
+# NOTE! DB_HOST may differs for different server configurations. Usual values are `localhost`, `127.0.0.1`
 
+# Postgres
 # DB_CONNECTION=system
 # DB_HOST=postgres
 # DB_PORT=5432
@@ -227,18 +218,76 @@ rm -rf ./tmp
 # DB_USERNAME=default
 # DB_PASSWORD=secret
 
+# Mysql
+# DB_CONNECTION=system
+# DB_HOST=mysql
+# DB_PORT=3306
+# DB_DATABASE=default
+# DB_USERNAME=default
+# DB_PASSWORD=secret
+
 ## Script way
-sed -i "s/DB_CONNECTION=mysql/DB_CONNECTION=system/g" .env
-sed -i "s/DB_HOST=127\.0\.0\.1/DB_HOST=postgres/g" .env
-sed -i "s/DB_PORT=3306/DB_PORT=5432/g" .env
-sed -i "s/DB_DATABASE=homestead/DB_DATABASE=default/g" .env
-sed -i "s/DB_USERNAME=homestead/DB_USERNAME=default/g" .env
+if [ "$DATABASE_TYPE" == "Postgres" ]; then
+    sed -i "s/DB_CONNECTION=mysql/DB_CONNECTION=system/g" .env
+    sed -i "s/DB_HOST=127\.0\.0\.1/DB_HOST=postgres/g" .env
+    sed -i "s/DB_PORT=3306/DB_PORT=5432/g" .env
+    sed -i "s/DB_DATABASE=homestead/DB_DATABASE=default/g" .env
+    sed -i "s/DB_USERNAME=homestead/DB_USERNAME=default/g" .env
+else
+    sed -i "s/DB_CONNECTION=mysql/DB_CONNECTION=system/g" .env
+    sed -i "s/DB_HOST=127\.0\.0\.1/DB_HOST=mysql/g" .env
+    echo '' >> .env
+    echo '# Mysql additional setup' >> .env
+    echo 'LIMIT_UUID_LENGTH_32=true' >> .env
+    echo '' >> .env
+fi
 
 # 02 Laravel-tenancy installation
 
 ## Change connection name to from `pgsql` to `system` in `./config/database.php`
 ## If you use mysql, change connection name to from `mysql` to `system` instead
-sed -i "s/'pgsql' => \[/'system' => [/g" ./config/database.php
+
+if [ "$DATABASE_TYPE" == "Postgres" ]; then
+    sed -i "s/'pgsql' => \[/'system' => [/g" ./config/database.php
+else
+    sed -i "s/'mysql' => \[/'system' => [/g" ./config/database.php
+    ## Override DefaultPasswordGenerator class of voyager. 
+    ## MySQL was looking for a hard password which have special char also in it. 
+    ## Voyager use MD5 which just have a-z and 0-9.
+cat << 'EOF' > app/DatabasePasswordGenerator.php
+<?php 
+
+namespace App;
+
+use Hyn\Tenancy\Generators\Database\DefaultPasswordGenerator;
+use Hyn\Tenancy\Contracts\Website;
+use Illuminate\Contracts\Foundation\Application;
+
+class DatabasePasswordGenerator extends DefaultPasswordGenerator
+{
+  /**
+   * @var Application
+   */
+  protected $app;
+  
+  public function __construct(Application $app)
+  {
+      $this->app = $app;
+  }
+  
+  public function generate(Website $website) : string
+  {
+        return crypt(sprintf(
+            '%s.%d',
+            $this->app['config']->get('app.key'),
+            $website->id
+        ), '$1$rasmusle$');
+  }
+}
+
+EOF
+    sed -i "s/'password-generator' => Hyn\\\Tenancy\\\Generators\\\Database\\\DefaultPasswordGenerator::class,/'password-generator' => App\\\DatabasePasswordGenerator::class,/g" ./config/tenancy.php
+fi
 
 ## Install package and configure the mulitenancy package
 composer require "hyn/multi-tenant:5.3.*"
