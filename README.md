@@ -4,16 +4,16 @@
 > 
 > * Add to your project `.env` line `LIMIT_UUID_LENGTH_32=true`
 > * Override DefaultPasswordGenerator class of voyager. MySQL was looking for a hard password which have special char also in it. Voyager use MD5 which just have a-z and 0-9.
-> * Update 'password-generator' in tenancy.php to have your own password generatore class like: 'password-generator' => App\DatabasePasswordGenerator::class
+> * Update 'password-generator' in `config/tenancy.php` to have your own password generatore class like: `'password-generator' => App\DatabasePasswordGenerator::class`
 > * .env file will have need DB connection for MySQL as well:
-```bash
-DB_CONNECTION=system
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=default
-DB_USERNAME=default
-DB_PASSWORD=secret
-```
+>```bash
+>DB_CONNECTION=system
+>DB_HOST=127.0.0.1
+>DB_PORT=3306
+>DB_DATABASE=default
+>DB_USERNAME=default
+>DB_PASSWORD=secret
+>```
 
 ## Intro
 
