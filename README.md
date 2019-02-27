@@ -722,7 +722,15 @@ class VoyagerTenantsController extends \TCG\Voyager\Http\Controllers\VoyagerBase
 
             $data = Hostname::where('fqdn', $fqdn)->firstOrFail(); 
 
+            // This line is stored just in case from the parent class method. Would try to save to tenant `hostnames`. 
+            // So it's of no use. Leave here as an example and just in case.
             // $data = $this->insertUpdateData($request, $slug, $dataType->addRows, new $dataType->model_name());
+
+            // !!! IMPORTANT 
+            // If you add additional fields to system `hostnames` table
+            // (it's assumed you have created and executed corresponding migrations, updated `hostnames` Voyager bread) 
+            // and want to save the additional fields, just uncomment the line below.
+            // $data = $this->insertUpdateData($request, $slug, $dataType->editRows, $data);
 
             event(new BreadDataAdded($dataType, $data));
 
