@@ -190,12 +190,15 @@ should be read as:
 # Set which database you use - Postgres of MySQL
 DATABASE_TYPE=Postgres
 
+MULTITENANCY_VERSION="5.*"
+LARAVEL_VERSION="5.*"
+
 # 01 Create laravel project.
 # We need an intermediate tmp folder as our current folder is not
 # empty (contains laradoc folder) and laravel installation would fail otherwise
 # If you don't use docker, just install a new laravel project and
 # change directory to it
-composer create-project --prefer-dist laravel/laravel tmp
+composer create-project --prefer-dist laravel/laravel tmp $LARAVEL_VERSION
 # Enable hidden files move
 shopt -s dotglob
 # Move laravel project files from ./tmp to the project root
@@ -218,7 +221,7 @@ rm -rf ./tmp
 # DB_PASSWORD=secret
 
 # Mysql
-# DB_CONNECTION=system
+# DB_CONNECTION=systemm
 # DB_HOST=mysql
 # DB_PORT=3306
 # DB_DATABASE=default
@@ -231,8 +234,9 @@ if [ "$DATABASE_TYPE" == "Postgres" ]; then
     sed -i "s/DB_CONNECTION=mysql/DB_CONNECTION=system/g" .env
     sed -i "s/DB_HOST=127\.0\.0\.1/DB_HOST=postgres/g" .env
     sed -i "s/DB_PORT=3306/DB_PORT=5432/g" .env
-    sed -i "s/DB_DATABASE=homestead/DB_DATABASE=default/g" .env
-    sed -i "s/DB_USERNAME=homestead/DB_USERNAME=default/g" .env
+    sed -i "s/DB_DATABASE=.*/DB_DATABASE=default/g" .env
+    sed -i "s/DB_USERNAME=.*/DB_USERNAME=default/g" .env
+    sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=secret/g" .env
 else
     sed -i "s/DB_CONNECTION=mysql/DB_CONNECTION=system/g" .env
     sed -i "s/DB_HOST=127\.0\.0\.1/DB_HOST=mysql/g" .env
@@ -290,7 +294,7 @@ EOF
 fi
 
 ## Install package and configure the mulitenancy package
-composer require "hyn/multi-tenant:5.3.*"
+composer require "hyn/multi-tenant:"$MULTITENANCY_VERSION
 php artisan vendor:publish --tag=tenancy
 
 ## Allow auto deleting tenant folders on tenant delete in `config/tenancy.php`. Optional.
