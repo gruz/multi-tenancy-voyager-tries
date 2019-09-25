@@ -481,12 +481,14 @@ EOF
 #     "laravel": {
 #         "dont-discover": [
 #             "tcg/voyager"
+#             "hyn/multi-tenant"
 #         ]
 #     }
 # },
 
 # Bash script
-sed -i "s/\"dont\-discover\"\: \[\]/\"dont\-discover\"\: [\"tcg\/voyager\"]/g" composer.json
+composer config extra.laravel.dont-discover null
+sed -i "s/\"dont\-discover\"\: \"null\"/\"dont\-discover\"\: [\"tcg\/voyager\", \"hyn\/multi-tenant\"]/g" composer.json
 
 # Install Voyager composer package
 composer require tcg/voyager
@@ -495,6 +497,19 @@ composer require tcg/voyager
 
 # Add `TCG\Voyager\VoyagerServiceProvider::class` to config/app.php providers array. Remember, we have disabled autodiscover.
 sed -i "s/\(App\\\Providers\\\RouteServiceProvider::class,\)/\1\n        TCG\\\Voyager\\\VoyagerServiceProvider::class,/g" config/app.php
+
+
+# Add
+#```
+#        App\Providers\CacheServiceProvider::class,
+#        Hyn\Tenancy\Providers\TenancyProvider::class,
+#        Hyn\Tenancy\Providers\WebserverProvider::class,
+#```
+# to config/app.php providers array. Remember, we have disabled autodiscover.
+sed -i "s/\(App\\\Providers\\\AppServiceProvider::class,\)/App\\\Providers\\\CacheServiceProvider::class,\n        \1/g" config/app.php
+sed -i "s/\(App\\\Providers\\\AppServiceProvider::class,\)/Hyn\\\Tenancy\\\Providers\\\TenancyProvider::class,\n        \1/g" config/app.php
+sed -i "s/\(App\\\Providers\\\AppServiceProvider::class,\)/Hyn\\\Tenancy\\\Providers\\\WebserverProvider::class,\n        \1/g" config/app.php
+
 
 # Register Voyager install command to app/Console/Kernel.php. It will be needed to create tenants via system Voyager.
 sed -i "s/\(protected \$commands = \[\)/\1\n        \\\TCG\\\Voyager\\\Commands\\\InstallCommand::class,/g" app/Console/Kernel.php
@@ -555,6 +570,124 @@ class AppServiceProvider extends ServiceProvider
 }
 
 EOF
+
+# Create own cache provider
+cat << 'EOF' > app/Providers/CacheServiceProvider.php
+<?php
+
+namespace App\Providers;
+
+use Illuminate\Cache\FileStore;
+use Illuminate\Cache\DatabaseStore;
+use Illuminate\Support\ServiceProvider;
+
+
+class CacheServiceProvider extends ServiceProvider
+{
+    /**
+     * Register services.
+     *
+     * @return void
+     */
+    public function register()
+    {
+        //
+    }
+
+    /**
+     * Bootstrap services.
+     *
+     * @return void
+     */
+    public function boot()
+    {
+        $namespace = function($app) {
+
+            if (PHP_SAPI === 'cli') {
+                return $app['config']['cache.default'];
+            }
+
+            $fqdn = request()->getHost();
+
+            $uuid = \DB::table('hostnames')
+                ->select('websites.uuid')
+                ->join('websites', 'hostnames.website_id', '=', 'websites.id')
+                ->where('fqdn', $fqdn)
+                ->value('uuid');
+
+            return $uuid;
+        };
+
+        $cacheDriver = config('cache.default');
+        switch ($cacheDriver) {
+            case 'file':
+                \Cache::extend($cacheDriver, function ($app) use ($namespace){
+                    $namespace = $namespace($app);
+
+                    return \Cache::repository(new FileStore(
+                        $app['files'],
+                        $app['config']['cache.stores.file.path'].$namespace
+                    ));
+                });
+                break;
+            case 'database':
+                \Cache::extend($cacheDriver, function ($app) use ($namespace){
+                    $namespace = $namespace($app);
+
+                    return \Cache::repository(new DatabaseStore(
+                        $app['db.connection'],
+                        'cache',
+                        $namespace
+                    ));
+                });
+                break;
+            case 'redis':
+                // But if not yet instantiated, then we are able to redifine namespace (prefix). Works for Redis only
+                if (PHP_SAPI === 'cli') {
+                    $namespace = str_slug(env('APP_NAME', 'laravel'), '_').'_cache';
+                } else {
+                    $fqdn = request()->getHost();
+                    $namespace = \DB::table('hostnames')
+                        ->select('websites.uuid')
+                        ->join('websites', 'hostnames.website_id', '=', 'websites.id')
+                        ->where('fqdn', $fqdn)
+                        ->value('uuid');
+                }
+                \Cache::setPrefix($namespace);
+                break;
+            default:
+        }
+    }
+}
+
+EOF
+
+# Override a buggy template
+cat << 'EOF' > resources/views/vendor/voyager/bread/partials/actions.blade.php
+@if($data)
+    @php
+        // need to recreate object because policy might depend on record data
+        // ##mygruz20190924185517 { An override to make code work again!
+         $class = is_object($action) ? get_class($action) : $action;
+        // ##mygruz20190924185517 }
+        $action = new $class($dataType, $data);
+    @endphp
+    @can ($action->getPolicy(), $data)
+        <a href="{{ $action->getRoute($dataType->name) }}" title="{{ $action->getTitle() }}" {!! $action->convertAttributesToHtml() !!}>
+            <i class="{{ $action->getIcon() }}"></i> <span class="hidden-xs hidden-sm">{{ $action->getTitle() }}</span>
+        </a>
+    @endcan
+@elseif (method_exists($action, 'massAction'))
+    <form method="post" action="{{ route('voyager.'.$dataType->slug.'.action') }}" style="display:inline">
+        {{ csrf_field() }}
+        <button type="submit" {!! $action->convertAttributesToHtml() !!}><i class="{{ $action->getIcon() }}"></i>  {{ $action->getTitle() }}</button>
+        <input type="hidden" name="action" value="{{ get_class($action) }}">
+        <input type="hidden" name="ids" value="" class="selected_ids">
+    </form>
+@endif
+
+EOF
+
 
 # Override Hyn Laravel tenanty Mediacontroller to make it work with Voyager.
 # Hyn forces to use `media` folder to store files while Voyager reads root

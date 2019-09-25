@@ -169,6 +169,9 @@ return [
         /*
          * Application Service Providers...
          */
+        App\Providers\CacheServiceProvider::class,
+        Hyn\Tenancy\Providers\TenancyProvider::class,
+        Hyn\Tenancy\Providers\WebserverProvider::class,
         App\Providers\AppServiceProvider::class,
         App\Providers\AuthServiceProvider::class,
         // App\Providers\BroadcastServiceProvider::class,

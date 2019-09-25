@@ -319,12 +319,14 @@ php artisan migrate --database=system
 #     "laravel": {
 #         "dont-discover": [
 #             "tcg/voyager"
+#             "hyn/multi-tenant"
 #         ]
 #     }
 # },
 
 # Bash script
-sed -i "s/\"dont\-discover\"\: \[\]/\"dont\-discover\"\: [\"tcg\/voyager\"]/g" composer.json
+composer config extra.laravel.dont-discover null
+sed -i "s/\"dont\-discover\"\: \"null\"/\"dont\-discover\"\: [\"tcg\/voyager\", \"hyn\/multi-tenant\"]/g" composer.json
 
 # Install Voyager composer package
 composer require tcg/voyager
@@ -334,11 +336,31 @@ composer require tcg/voyager
 # Add `TCG\Voyager\VoyagerServiceProvider::class` to config/app.php providers array. Remember, we have disabled autodiscover.
 sed -i "s/\(App\\\Providers\\\RouteServiceProvider::class,\)/\1\n        TCG\\\Voyager\\\VoyagerServiceProvider::class,/g" config/app.php
 
+
+# Add
+#```
+#        App\Providers\CacheServiceProvider::class,
+#        Hyn\Tenancy\Providers\TenancyProvider::class,
+#        Hyn\Tenancy\Providers\WebserverProvider::class,
+#```
+# to config/app.php providers array. Remember, we have disabled autodiscover.
+sed -i "s/\(App\\\Providers\\\AppServiceProvider::class,\)/App\\\Providers\\\CacheServiceProvider::class,\n        \1/g" config/app.php
+sed -i "s/\(App\\\Providers\\\AppServiceProvider::class,\)/Hyn\\\Tenancy\\\Providers\\\TenancyProvider::class,\n        \1/g" config/app.php
+sed -i "s/\(App\\\Providers\\\AppServiceProvider::class,\)/Hyn\\\Tenancy\\\Providers\\\WebserverProvider::class,\n        \1/g" config/app.php
+
+
 # Register Voyager install command to app/Console/Kernel.php. It will be needed to create tenants via system Voyager.
 sed -i "s/\(protected \$commands = \[\)/\1\n        \\\TCG\\\Voyager\\\Commands\\\InstallCommand::class,/g" app/Console/Kernel.php
 
 # Update your AppServiceProvider.php to switch to tenant DB and filesystem when requesting a tenant URL
 @@file : app/Providers/AppServiceProvider.php
+
+# Create own cache provider
+@@file : app/Providers/CacheServiceProvider.php
+
+# Override a buggy template
+@@file : resources/views/vendor/voyager/bread/partials/actions.blade.php
+
 
 # Override Hyn Laravel tenanty Mediacontroller to make it work with Voyager.
 # Hyn forces to use `media` folder to store files while Voyager reads root

@@ -32,9 +32,7 @@
     },
     "extra": {
         "laravel": {
-            "dont-discover": [
-                "tcg/voyager"
-            ]
+            "dont-discover": ["tcg/voyager", "hyn/multi-tenant"]
         }
     },
     "autoload": {
